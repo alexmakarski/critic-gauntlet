@@ -37,15 +37,28 @@ You iterate until the findings shift from architecture ("the shape is wrong") to
 
 ## Install
 
-This is a Claude Code skill. Copy the folder into your skills directory:
+Pick either path.
+
+**As a plugin (recommended).** Inside Claude Code:
+
+```
+/plugin marketplace add alexmakarski/critic-gauntlet
+/plugin install critic-gauntlet@critic-gauntlet
+```
+
+It is also listed in the combined marketplace at [alexmakarski/claude-plugins](https://github.com/alexmakarski/claude-plugins) alongside the other tools, if you would rather add one marketplace and get everything.
+
+**Manual.** Clone and copy the skill folder into your skills directory:
 
 ```bash
 git clone https://github.com/alexmakarski/critic-gauntlet.git
-cp -R critic-gauntlet ~/.claude/skills/critic-gauntlet
+cp -R critic-gauntlet/skills/critic-gauntlet ~/.claude/skills/critic-gauntlet
 chmod +x ~/.claude/skills/critic-gauntlet/*.sh
 ```
 
-Then it is available to Claude Code as the `critic-gauntlet` skill.
+Or run the installer from the cloned folder: `./install-critic-gauntlet.sh`.
+
+Either way it is available to Claude Code as the `critic-gauntlet` skill.
 
 ## Setup
 
@@ -65,7 +78,7 @@ export XAI_API_KEY=your-key
 export GEMINI_API_KEY=your-key
 ```
 
-The helper scripts resolve keys from the environment first, then from a `.env` file in the skill folder or your home directory, then from common shell rc files (`.zshrc`, `.bashrc`, `.bash_profile`, `.profile`). The exported-env path is the most reliable. See [.env.example](.env.example).
+The helper scripts resolve keys from the environment first, then from a `.env` file in the skill folder or your home directory, then from common shell rc files (`.zshrc`, `.bashrc`, `.bash_profile`, `.profile`). The exported-env path is the most reliable. See [.env.example](skills/critic-gauntlet/.env.example).
 
 Other dependencies the scripts assume: `bash`, `curl`, and [`jq`](https://jqlang.github.io/jq/).
 

@@ -1,0 +1,10 @@
+{
+  "name": "critic-gauntlet",
+  "description": "Run an adversarial critic gauntlet on an architectural proposal. Four AI models (Claude, Codex, Grok, Gemini) critique in parallel; raw objections are surfaced verbatim, then synthesized. For architectural decisions you cannot cheaply reverse.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Alex Makarski"
+  },
+  "repository": "https://github.com/alexmakarski/critic-gauntlet",
+  "license": "MIT"
+}

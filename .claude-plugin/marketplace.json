@@ -1,0 +1,15 @@
+{
+  "name": "critic-gauntlet",
+  "owner": {
+    "name": "Alex Makarski",
+    "url": "https://github.com/alexmakarski"
+  },
+  "plugins": [
+    {
+      "name": "critic-gauntlet",
+      "source": "../",
+      "description": "Adversarial multi-model architecture critic for Claude Code",
+      "version": "1.0.0"
+    }
+  ]
+}
