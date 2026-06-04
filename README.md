@@ -22,7 +22,19 @@ You write a short proposal (status, context, what you propose, what it trades, o
 4. Synthesizes: what all critics agreed on (binding), what a majority agreed on (strong), what split, and what a single critic uniquely caught.
 5. You decide: run another round against a revised proposal, or accept and write the decision record.
 
-You iterate until the findings shift from architecture ("the shape is wrong") to specification ("the shape is right, but it is imprecise here, here, and here"). That shift is the signal to stop. See [examples/worked-example.md](examples/worked-example.md) for a real four-round run.
+You iterate until the findings shift from architecture ("the shape is wrong") to specification ("the shape is right, but it is imprecise here, here, and here"). That shift is the signal to stop. See [the worked example](skills/critic-gauntlet/examples/worked-example.md) for a real four-round run.
+
+## What each critic returns
+
+Every critic answers in the same five-section structure, which is what forces rigor instead of agreeable mush:
+
+1. **Three biggest holes.** Specific failure modes or real costs, not vague concerns. The cap at three forces prioritization.
+2. **Steel-manned alternatives.** An 80% version (simpler, most of the value, less work) and a 110% version (more rigorous, what you are dismissing). Demanding both directions blocks the lazy "just do less" or "just do more" critique and makes the critic actually engage the design space.
+3. **Unstated assumptions** (at least four). Each with why it might be wrong. Surfaces the foundation the proposal is silently standing on.
+4. **Consequences for the ADR.** What the team regrets in six months if this ships as-is. Forces a time horizon.
+5. **Recommendation.** Ship as-is, ship with named amendments, or kill and reformulate, plus a confidence level. Forces a verdict, not a hedge.
+
+The structure is also why convergence is meaningful: when four models independently fill the same five slots, you can see exactly where they agree and where one caught something the others missed.
 
 ## The roster
 
