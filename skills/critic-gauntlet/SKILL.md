@@ -108,11 +108,34 @@ In a single message, fire all enabled critic tool calls.
 
 The helper scripts take two arguments: the decisions folder path and the round number. Both auto-pick up prior-round critiques when N > 1.
 
-### Step 3: Wait for all enabled critics to complete
+### Step 3: Verify every critic returned a real critique (liveness gate)
 
-Each critic notifies on completion. The Claude subagent typically takes 2-3 minutes. Codex CLI 5-10 minutes. Grok and Gemini both return in under a minute and never gate completion.
+Do not synthesize until every enabled critic has either produced a valid critique or been explicitly dropped by the user. A missing critic must never be silently absorbed: a degraded roster is a decision, not a default. The most common way a gauntlet quietly loses signal is a critic that erred without anyone noticing, and the synthesis treating three-of-an-intended-four as if four had agreed.
 
-Do not synthesize until all enabled critics return.
+Typical timing: Claude subagent 2-3 min, Codex CLI 5-10 min, Grok and Gemini under a minute.
+
+**Success condition (same gate for all critics).** A critic passed only if ALL hold:
+1. Its `critique-v<N>-<critic>.md` file exists and is at least ~500 bytes. Real critiques run 3 KB and up; anything smaller is a stub or error.
+2. The file is the actual 5-section critique, not an error payload. Reject if it leads with `ERROR:` or contains raw API error JSON.
+3. For the Bash critics (Codex, Grok, Gemini): the process exit code was 0. The helper scripts `set -euo pipefail` and exit non-zero on any missing-key / API / empty-response failure. Capture the last stderr line as the failure reason.
+4. For the Claude subagent: the Agent tool returned success and the file was written. A subagent that erred without writing the file is a fail even if it returned some text.
+
+**On any critic failing: retry once, then halt.**
+1. Retry the failed critic exactly once. Transient infrastructure, rate-limit, and spawn errors usually clear on the second attempt.
+2. If it fails the second time, STOP. Do not synthesize. Tell the user, in plain language: which critic is down, the captured failure reason, the role lost (roster below), the surviving roster, and the choice: proceed with the reduced roster / pause and fix / abort the round.
+3. The default recommendation depends on WHICH critic died:
+   - Lost an ANCHOR (Claude or Codex, the two low-noise models): default to PAUSE. The synthesis leans on anchor agreement; losing one materially degrades signal.
+   - Lost a NOISE-FLOOR critic (Grok or Gemini): a reduced run is acceptable. Default to proceed; note the loss in the synthesis roster line.
+
+**Billing note for the Claude critic.** The Claude critic runs as a Claude Code subagent on your existing subscription, not as a metered API call, and it requires no `ANTHROPIC_API_KEY`. Do not "fix" a Claude failure by setting one: in Claude Code, setting `ANTHROPIC_API_KEY` anywhere in the environment routes the entire app to API billing instead of your subscription. If the subagent fails, retry it (above); never reach for a key.
+
+**Roster roles (so a loss is costed correctly):**
+- Claude subagent: operational-nuance anchor, low noise, no API key.
+- Codex CLI: specification-bug anchor, low noise.
+- Grok: privacy / policy / jurisdictional angles. Higher noise.
+- Gemini: catches blind spots shaped by a different training distribution than the other three. Highest noise.
+
+Whatever the outcome, the synthesis roster line must name every critic that was attempted and its status (returned / dropped-after-2-fails / user-skipped), so the degraded-roster fact survives into the record.
 
 ### Step 4: Surface raw critic outputs verbatim
 
