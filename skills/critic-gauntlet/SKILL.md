@@ -1,5 +1,6 @@
 ---
 name: critic-gauntlet
+version: 2.0.0
 description: Run an adversarial critic gauntlet on an architectural proposal. Spawns a Claude general-purpose subagent plus optional Codex CLI, Grok (xAI API), and Gemini (Google AI Studio API) critics in parallel, surfaces raw critic outputs verbatim, then synthesizes. Use for architectural decisions (system shape, delivery mechanism, multi-tenancy model, new critical-path dependency, repo structure).
 ---
 
@@ -36,7 +37,42 @@ Non-architectural changes (bug fixes, refactors, feature additions inside an exi
 
 ## The flow
 
-### Step 1: Write the adversarial brief
+### Step 1: Probe the roster
+
+Before doing anything else, determine which critics are available on this machine and announce the roster to the user.
+
+```bash
+# Probe each critic. Print "available" or "skipped: <reason>".
+echo "Critic roster:"
+
+# Claude (always available)
+echo "  Claude general-purpose subagent: available"
+
+# Codex CLI
+if command -v codex &>/dev/null; then
+    echo "  Codex CLI: available"
+else
+    echo "  Codex CLI: skipped (codex not on PATH)"
+fi
+
+# Grok via xAI
+if [ -n "${XAI_API_KEY:-}" ]; then
+    echo "  Grok-4 (xAI): available"
+else
+    echo "  Grok-4 (xAI): skipped (XAI_API_KEY not set)"
+fi
+
+# Gemini via Google AI Studio
+if [ -n "${GEMINI_API_KEY:-}" ]; then
+    echo "  Gemini 3.1 Pro Preview (Google AI Studio): available"
+else
+    echo "  Gemini 3.1 Pro Preview (Google AI Studio): skipped (GEMINI_API_KEY not set)"
+fi
+```
+
+If only Claude is available, warn the user that this is a degenerate run and ask whether to proceed. Otherwise proceed without prompting.
+
+### Step 2: Write the adversarial brief
 
 Save to `<decisions-folder>/brief-v<N>.md` where N is the round number.
 
@@ -63,6 +99,9 @@ Optional context:
 ## What you must produce
 
 A structured critique with these sections in this order:
+
+### 0. The boring baseline (answer this first)
+State the most standard, well-understood, right-fit way to solve THIS specific job. "Boring" means standard and right-fit, NOT fewest new parts: reusing an existing wrong-fit tool to avoid building anything is not the boring baseline, it is a trap. The boring baseline is often a recomposition of parts already in use, or one small standard service on infrastructure already run. Then state why the proposal is not just that. Resist new dependencies, platforms, and novel patterns, not new parts per se. A proposal that cannot beat the boring baseline on a demonstrated (not hypothetical) benefit should lose to it.
 
 ### 1. Three biggest holes
 Specific architectural or operational problems. Concrete failure modes or real costs the proposer is glossing over.
@@ -94,7 +133,7 @@ State confidence level: high / moderate / low / unknown.
 - Markdown. No introduction. No closing pleasantry.
 ```
 
-### Step 2: Spawn the critics in parallel
+### Step 3: Spawn the critics in parallel
 
 In a single message, fire all enabled critic tool calls.
 
@@ -108,7 +147,7 @@ In a single message, fire all enabled critic tool calls.
 
 The helper scripts take two arguments: the decisions folder path and the round number. Both auto-pick up prior-round critiques when N > 1.
 
-### Step 3: Verify every critic returned a real critique (liveness gate)
+### Step 4: Verify every critic returned a real critique (liveness gate)
 
 Do not synthesize until every enabled critic has either produced a valid critique or been explicitly dropped by the user. A missing critic must never be silently absorbed: a degraded roster is a decision, not a default. The most common way a gauntlet quietly loses signal is a critic that erred without anyone noticing, and the synthesis treating three-of-an-intended-four as if four had agreed.
 
@@ -137,15 +176,25 @@ Typical timing: Claude subagent 2-3 min, Codex CLI 5-10 min, Grok and Gemini und
 
 Whatever the outcome, the synthesis roster line must name every critic that was attempted and its status (returned / dropped-after-2-fails / user-skipped), so the degraded-roster fact survives into the record.
 
-### Step 4: Surface raw critic outputs verbatim
+### Step 5: Surface raw critic outputs verbatim
 
 Read each critique file and present its content to the user verbatim. Do not summarize before the user has seen the raw text. A one-line preamble per critique is fine ("Claude returned. Recommends X."), but the actual critique content goes through verbatim. The point of independent critics is defeated if a synthesizer filters them before the human sees them.
 
-### Step 5: Synthesize to `<decisions-folder>/synthesis-v<N>.md`
+### Step 5.5: Decision discipline (non-negotiable; this is where ADR-002 failed)
+
+The critique stage is not the weak point of this gauntlet; synthesis is. The classic failure: critics unanimously reject an approach and converge on a simpler alternative, then the synthesis (written by the same agent that wrote the proposal) overrides all of them with one persuasive sentence and ships the exact architecture the gauntlet was run to prevent. These rules bind the synthesis so the producer can no longer grade the critics:
+
+1. **Convergence BINDS the decision, not just the next iteration.** If critics converge against the proposed approach (4-of-4, 3-of-4, 3-of-3, or 2-of-3), you may NOT adopt the rejected approach in `decision.md`. The convergent alternative is the default outcome.
+2. **Overriding convergence requires explicit escalation, never prose.** If you believe the converged critics are wrong, you may not bury the reversal in the synthesis or decision. Stop and put it to the user in plain words: "All N critics say X. I am proposing NOT-X. Here is exactly what I am asking you to overrule them on, and why." The user overrides consciously, or the convergent answer stands. A hypothetical objection ("it might not scale") is not grounds; only a demonstrated one is.
+3. **The synthesizer is not the proposer (always, no exceptions).** The main session is anchored by the whole discussion, so it never writes the synthesis. Spawn a FRESH general-purpose agent (Agent tool, `subagent_type: "general-purpose"`, `model: "haiku"`, a deliberately small model so the judge cannot out-clever the critics) and hand it the fixed synthesis-agent prompt (see "Synthesis agent invocation" below) verbatim. Do not author findings for it or summarize the critiques for it; it reads the raw critiques and the proposal from files itself. Then surface its `synthesis-v<N>.md` to the user VERBATIM, the same rule as the raw critiques, so the proposer cannot spin the verdict on relay. The thing with ego in the proposal neither writes the synthesis nor narrates it.
+4. **Boring-baseline must be answered in the synthesis.** Restate the most standard, right-fit way to do this for the job (reuse, a recomposition of existing parts, or one small standard new service, whichever actually fits; reusing a wrong-fit existing tool is NOT the boring baseline). State why the chosen design is not just that. If "why not the boring way" has no demonstrated answer, the boring way wins.
+5. **Proof-of-life before "decided."** No `decision.md` is accepted until one real end-to-end slice runs on real infrastructure. A decision on paper is a hypothesis.
+
+### Step 6: Synthesize to `<decisions-folder>/synthesis-v<N>.md`
 
 The synthesis identifies:
 
-- **All-critic convergence.** Strongest possible signal. Treat as binding for the next iteration.
+- **All-critic convergence (4-of-4, or 3-of-3 if running three).** Strongest possible signal. Binding for the next iteration AND for the final decision (Step 5.5): you may not ship an architecture the critics converged against without explicit user override.
 - **Majority convergence.** Strong signal. Worth incorporating.
 - **Split convergence.** Evaluate by which critics converged. The two lowest-noise models agreeing (Claude + Codex) is high signal. The two noisier models agreeing (Grok + Gemini) should be treated as one combined noisy vote: verify the finding before incorporating. A mixed pair is case-by-case.
 - **Single-critic novel findings.** Sometimes the most valuable. Codex tends to catch specification bugs others miss. Claude tends to catch operational nuance. Grok tends to catch privacy/policy/jurisdictional angles. Gemini catches things shaped by a different training distribution.
@@ -157,9 +206,9 @@ Then surface the decision question to the user. Two paths:
 
 The bar for stopping: the pattern of findings has shifted from architecture ("the shape is wrong") to specification ("the shape is right, but the spec is imprecise in N places"). Architecture findings require iteration. Specification findings can be amended in place.
 
-### Step 6: After the user picks a path
+### Step 7: After the user picks a path
 
-If Path A: draft proposal-v<N+1>, repeat from Step 1.
+If Path A: draft proposal-v<N+1>, repeat from Step 2.
 If Path B: write `decision.md` with the chosen architecture, the load-bearing fixes as "Blocking work before code," and the documentable items as "Known limitations." Update the related `ARCHITECTURE.md` if relevant.
 
 ## Files this skill writes
@@ -209,6 +258,26 @@ POSTURE:
 - Read prior critiques if any (in same folder) to calibrate rigor.
 - No em-dashes or double-dashes. Use periods, commas, colons.
 - Lead with the strongest objection, no sympathetic opener.
+```
+
+### Synthesis agent invocation
+
+The synthesis is written by a FRESH general-purpose agent, never the main (proposer) session (Step 5.5 rule 3). Spawn it with the Agent tool, `subagent_type: "general-purpose"`, `model: "haiku"` (a deliberately small model: the synthesis job is near-mechanical, and a less-clever judge cannot rationalize past the critics), and pass this prompt verbatim. Do not summarize the critiques for it; it reads them itself. Surface its output to the user verbatim.
+
+```
+You are the neutral synthesizer for <ADR-title> round <N>. You did NOT write the proposal and have no stake in it. Treat the proposal as a hypothesis to disprove.
+
+STEP 1: Read in full: <proposal-vN.md>, and every critique-v<N>-*.md in <decisions-folder>.
+
+STEP 2: Write <decisions-folder>/synthesis-v<N>.md covering:
+- Convergence: what 4-of-4 / 3-of-4 / 2-of-4 critics agreed on. Convergence AGAINST the proposed approach is BINDING: you may not recommend an approach the critics converged against.
+- The boring baseline: the most standard, right-fit way to do this for the job (reuse OR a small standard new part, whichever fits; reusing a wrong-fit tool is not boring), and whether the proposal beats it on a demonstrated (not hypothetical) benefit. If it does not, recommend the boring baseline.
+- Single-critic novel findings worth keeping.
+- Recommendation: adopt convergent alternative / amend proposal / proceed. If you believe a convergence is wrong, do NOT override it; flag it for explicit human decision.
+
+STEP 3: Output ONE LINE: 'Synthesis written to <path>, recommendation: <...>'
+
+POSTURE: neutral judge, not advocate. No sympathetic opener. Lead with what the critics converged on. No em-dashes or double-dashes.
 ```
 
 ### Codex CLI invocation
