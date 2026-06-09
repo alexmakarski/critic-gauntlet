@@ -1,6 +1,6 @@
 ---
 name: critic-gauntlet
-version: 2.0.0
+version: 2.1.0
 description: Run an adversarial critic gauntlet on an architectural proposal. Spawns a Claude general-purpose subagent plus optional Codex CLI, Grok (xAI API), and Gemini (Google AI Studio API) critics in parallel, surfaces raw critic outputs verbatim, then synthesizes. Use for architectural decisions (system shape, delivery mechanism, multi-tenancy model, new critical-path dependency, repo structure).
 ---
 
@@ -102,6 +102,9 @@ A structured critique with these sections in this order:
 
 ### 0. The boring baseline (answer this first)
 State the most standard, well-understood, right-fit way to solve THIS specific job. "Boring" means standard and right-fit, NOT fewest new parts: reusing an existing wrong-fit tool to avoid building anything is not the boring baseline, it is a trap. The boring baseline is often a recomposition of parts already in use, or one small standard service on infrastructure already run. Then state why the proposal is not just that. Resist new dependencies, platforms, and novel patterns, not new parts per se. A proposal that cannot beat the boring baseline on a demonstrated (not hypothetical) benefit should lose to it.
+
+### 0.5 The blank-sheet design (diagnostic, answer right after the baseline)
+State what you would build for this job from a blank sheet, with NO existing code, infrastructure, or product, ignoring all sunk cost. Then state the delta from current reality. This is a MIRROR, not a migration mandate: a large delta is a prompt to ask why the system drifted and whether the gap is worth any migration cost, never an instruction to rebuild. If the blank-sheet design and the boring baseline agree, say so plainly (the current shape is a defensible choice, not an accident). If they diverge, the gap is the path-dependence cost the ADR must price explicitly, separating the deltas worth a cutover from the ones to simply keep.
 
 ### 1. Three biggest holes
 Specific architectural or operational problems. Concrete failure modes or real costs the proposer is glossing over.
@@ -272,6 +275,7 @@ STEP 1: Read in full: <proposal-vN.md>, and every critique-v<N>-*.md in <decisio
 STEP 2: Write <decisions-folder>/synthesis-v<N>.md covering:
 - Convergence: what 4-of-4 / 3-of-4 / 2-of-4 critics agreed on. Convergence AGAINST the proposed approach is BINDING: you may not recommend an approach the critics converged against.
 - The boring baseline: the most standard, right-fit way to do this for the job (reuse OR a small standard new part, whichever fits; reusing a wrong-fit tool is not boring), and whether the proposal beats it on a demonstrated (not hypothetical) benefit. If it does not, recommend the boring baseline.
+- The blank-sheet delta: what a from-scratch design (no sunk cost) would be, how far current reality is from it, and which deltas are worth migration cost versus pure path-dependence to keep. Use it as a mirror on the boring baseline, never as a rebuild mandate.
 - Single-critic novel findings worth keeping.
 - Recommendation: adopt convergent alternative / amend proposal / proceed. If you believe a convergence is wrong, do NOT override it; flag it for explicit human decision.
 
