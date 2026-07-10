@@ -17,15 +17,41 @@ MODEL="${GROK_MODEL:-grok-4.3}"
 # -----------------------------------------------------------------------------
 
 if [ "$#" -lt 2 ]; then
-    echo "Usage: $0 <decisions-folder> <round-number>" >&2
+    echo "Usage: $0 <work-folder> <round-number> [--mode architecture|science|editorial]" >&2
     exit 1
 fi
 
 DIR="$1"
 ROUND="$2"
+shift 2
+
+MODE="architecture"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --mode) MODE="$2"; shift 2 ;;
+        *) echo "ERROR: unknown argument: $1" >&2; exit 1 ;;
+    esac
+done
+
+# Locate the modes dir. Works whether the script sits alongside modes/ (skill folder)
+# or in a sibling tools/ dir (plugin layout).
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODES_DIR=""
+for cand in "$SELF_DIR/modes" "$SELF_DIR/../skills/critic-gauntlet/modes" "$SELF_DIR/../modes"; do
+    [ -d "$cand" ] && { MODES_DIR="$(cd "$cand" && pwd)"; break; }
+done
+if [ -z "$MODES_DIR" ]; then
+    echo "ERROR: modes/ dir not found near $SELF_DIR" >&2
+    exit 1
+fi
+SYSTEM_FILE="$MODES_DIR/${MODE}.system.txt"
+if [ ! -f "$SYSTEM_FILE" ]; then
+    echo "ERROR: unknown mode '$MODE' (no $SYSTEM_FILE)" >&2
+    exit 1
+fi
 
 if [ ! -d "$DIR" ]; then
-    echo "ERROR: decisions folder not found: $DIR" >&2
+    echo "ERROR: work folder not found: $DIR" >&2
     exit 1
 fi
 
@@ -87,7 +113,12 @@ fi
 
 DATE=$(date +%Y-%m-%d)
 
-SYSTEM_PROMPT="You are an adversarial architecture critic for round ${ROUND}. Find what is wrong with the proposal. Lead with the strongest objection. No sympathetic openers. No em-dashes. No double-dashes. Match the rigor of prior-round critiques if present. Do NOT re-litigate convergent decisions from prior rounds unless you find new evidence against them. Push on what this version introduces or leaves underspecified. Produce a structured critique in markdown with these 5 sections in order: 1) Three biggest holes, 2) Steel-manned alternatives (80% and 110%), 3) Unstated assumptions (at least 4), 4) Consequences for ADR, 5) Recommendation (ship-as-is, ship-with-amendments, or kill-reformulate) plus confidence level. Begin with the heading '# Critique v${ROUND}: Grok (xAI API direct) ${DATE}' followed by 'Model: ${MODEL} via xAI API direct, adversarial brief.' on its own line."
+# System prompt = mode rubric with placeholders substituted. This critic's identity.
+SYSTEM_PROMPT=$(cat "$SYSTEM_FILE")
+SYSTEM_PROMPT="${SYSTEM_PROMPT//\{\{ROUND\}\}/$ROUND}"
+SYSTEM_PROMPT="${SYSTEM_PROMPT//\{\{DATE\}\}/$DATE}"
+SYSTEM_PROMPT="${SYSTEM_PROMPT//\{\{CRITIC\}\}/Grok (xAI API direct)}"
+SYSTEM_PROMPT="${SYSTEM_PROMPT//\{\{MODEL\}\}/$MODEL via xAI API direct}"
 
 USER_PROMPT="Read everything below, then produce the critique.
 
@@ -112,7 +143,7 @@ PAYLOAD=$(jq -n \
             {role: "user", content: $user}
         ],
         temperature: 0.3,
-        max_tokens: 8000
+        max_tokens: 16000
     }')
 
 RESPONSE=$(curl -sS https://api.x.ai/v1/chat/completions \
