@@ -1,6 +1,6 @@
 ---
 name: critic-gauntlet
-version: 2.2.1
+version: 2.3.0
 description: Run an adversarial critic gauntlet on a proposal. Spawns a Claude general-purpose subagent plus optional Codex CLI, Grok (xAI API), and Gemini (Google AI Studio API) critics in parallel, surfaces raw critic outputs verbatim, then synthesizes. One harness, three rubric modes selected by a flag: architecture (ADR decisions), science (working-paper peer-review desk-screen), editorial (five-lens article review).
 ---
 
@@ -40,7 +40,7 @@ Posture is identical across modes: no sympathetic openers, lead with the stronge
 Per-mode policy that differs from the architecture default:
 
 - **science data-sovereignty.** The external API critics (Grok, Gemini) are third-party vendors. In science mode they may read ONLY the anonymized paper and its stated public sources, NEVER the raw dataset or any file carrying subject identity. A properly anonymized paper is safe to send; the underlying data and any identity key are not. This is a policy about egress of identified data to outside APIs, not a ban on running multiple critics: an anonymized artifact runs the full roster. The brief template restates this rule in its header.
-- **editorial calibration.** Model families differ in how readily they flag editorial risk; some run lenient on prose and strict on architecture, or the reverse. Do not assume a critic's architecture-mode temperament carries into editorial. Weight by which critics actually converge on quoted evidence.
+- **editorial calibration.** Model families differ in how readily they flag editorial risk; some run lenient on prose and strict on architecture, or the reverse. Do not assume a critic's architecture-mode temperament carries into editorial. Weight by which critics actually converge on quoted evidence. The API helper scripts run a two-call protocol in editorial mode: call 1 sees the article alone and returns the cold-read log, call 2 gets the brief and materials plus those notes, so the cold first pass is real rather than reconstructed.
 
 ## When to invoke
 

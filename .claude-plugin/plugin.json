@@ -1,7 +1,7 @@
 {
   "name": "critic-gauntlet",
   "description": "Run an adversarial critic gauntlet on high-stakes work. Four AI models (Claude, Codex, Grok, Gemini) critique in parallel; raw objections are surfaced verbatim, then synthesized. Three rubric modes: architecture (ADR decisions), science (working-paper desk-screen), editorial (five-lens article review).",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": {
     "name": "Alex Makarski"
   },

@@ -116,6 +116,44 @@ fi
 
 DATE=$(date +%Y-%m-%d)
 
+# --- Editorial mode: real cold read (two-call protocol) -----------------------
+# The editorial brief requires a first pass over the article WITHOUT the brief
+# or atoms; a single stuffed prompt cannot deliver that. In editorial mode,
+# call 1 sees the article alone and returns the cold-read log; call 2 gets the
+# full materials plus those notes.
+COLD_BLOCK=""
+if [ "$MODE" = "editorial" ]; then
+    COLD_SYSTEM="You are an independent editorial critic on your FIRST pass over an article. You have not seen the brief or source materials yet; that is deliberate. Read the article cold, top to bottom. Produce ONLY your cold-read log: where your attention flagged, where you got confused, where you stopped believing, whether you would have kept reading if it landed in your inbox. Quote the exact passages. No em-dashes. No double hyphens. No preamble, no summary of the article, no verdict."
+    COLD_PAYLOAD=$(jq -n \
+        --arg model "$MODEL" \
+        --arg system "$COLD_SYSTEM" \
+        --arg user "$(cat "$PROPOSAL")" \
+        '{
+            model: $model,
+            messages: [
+                {role: "system", content: $system},
+                {role: "user", content: $user}
+            ],
+            temperature: 0.3,
+            max_tokens: 8000
+        }')
+    COLD_RESPONSE=$(curl -sS https://api.x.ai/v1/chat/completions \
+        -H "Authorization: Bearer $XAI_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "$COLD_PAYLOAD")
+    COLD_NOTES=$(echo "$COLD_RESPONSE" | jq -r '.choices[0].message.content // empty')
+    if [ -z "$COLD_NOTES" ]; then
+        echo "ERROR: empty cold-read response from xAI API (editorial two-call, call 1)" >&2
+        echo "$COLD_RESPONSE" >&2
+        exit 1
+    fi
+    COLD_BLOCK="
+
+===== YOUR COLD-READ NOTES (your own first pass, article only; reproduce verbatim as your cold-read log) =====
+$COLD_NOTES"
+fi
+# -----------------------------------------------------------------------------
+
 # System prompt = mode rubric with placeholders substituted. This critic's identity.
 SYSTEM_PROMPT=$(cat "$SYSTEM_FILE")
 SYSTEM_PROMPT="${SYSTEM_PROMPT//\{\{ROUND\}\}/$ROUND}"
@@ -130,7 +168,7 @@ $(cat "$BRIEF")
 
 ===== MATERIAL UNDER REVIEW (the target of critique) =====
 $(cat "$PROPOSAL")
-${PRIOR_CONTEXT}
+${PRIOR_CONTEXT}${COLD_BLOCK}
 
 ===== TASK =====
 Produce the adversarial critique now. Markdown format. No preamble. Start with the heading and metadata, then follow the brief's output format."

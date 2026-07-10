@@ -18,7 +18,7 @@ Optional context (subject to the data-sovereignty rule above):
 
 ## What you must produce
 
-A structured critique with these sections in this order:
+A structured critique with these sections in this order. Tag every finding with severity: blocker (sinks the paper at the target venue), should (a hostile referee would demand it), or nice (improves the paper but blocks nothing). Derive the recommendation from the tags, not from overall impression.
 
 ### 1. The claim and whether the evidence supports it
 State the paper's central claim in one sentence, in your own words. Then judge: does the evidence presented actually support that claim, or a weaker one? Name the gap between what is shown and what is asserted. Overclaiming is the single most common desk-reject cause; quote the sentence where it happens.
@@ -51,5 +51,6 @@ State confidence level: high / moderate / low / unknown.
 - No sympathetic openers. No balanced view; surface the strongest case against.
 - Lead with the strongest objection.
 - Every deduction cites the exact passage, figure, or table that caused it.
+- If a section has no findings, say so and move on; do not invent problems to appear rigorous.
 - No em-dashes or double-dashes anywhere in output.
 - Markdown. No introduction. No closing pleasantry.
