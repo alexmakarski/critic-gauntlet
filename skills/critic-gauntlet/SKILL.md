@@ -1,6 +1,6 @@
 ---
 name: critic-gauntlet
-version: 2.2.0
+version: 2.2.1
 description: Run an adversarial critic gauntlet on a proposal. Spawns a Claude general-purpose subagent plus optional Codex CLI, Grok (xAI API), and Gemini (Google AI Studio API) critics in parallel, surfaces raw critic outputs verbatim, then synthesizes. One harness, three rubric modes selected by a flag: architecture (ADR decisions), science (working-paper peer-review desk-screen), editorial (five-lens article review).
 ---
 
@@ -78,16 +78,16 @@ fi
 
 # Grok via xAI
 if [ -n "${XAI_API_KEY:-}" ]; then
-    echo "  Grok-4 (xAI): available"
+    echo "  Grok (xAI): available"
 else
-    echo "  Grok-4 (xAI): skipped (XAI_API_KEY not set)"
+    echo "  Grok (xAI): skipped (XAI_API_KEY not set)"
 fi
 
 # Gemini via Google AI Studio
 if [ -n "${GEMINI_API_KEY:-}" ]; then
-    echo "  Gemini 3.1 Pro Preview (Google AI Studio): available"
+    echo "  Gemini (Google AI Studio): available"
 else
-    echo "  Gemini 3.1 Pro Preview (Google AI Studio): skipped (GEMINI_API_KEY not set)"
+    echo "  Gemini (Google AI Studio): skipped (GEMINI_API_KEY not set)"
 fi
 ```
 

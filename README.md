@@ -1,6 +1,8 @@
 # Critic Gauntlet
 
-A Claude Code skill that pits four AI models against your architectural proposal as adversarial critics, surfaces their raw objections to you unfiltered, and synthesizes where they agree. For decisions you cannot cheaply reverse.
+A Claude Code skill that pits four AI models against your work as adversarial critics, surfaces their raw objections to you unfiltered, and synthesizes where they agree. For decisions and documents you cannot cheaply reverse.
+
+One harness, three rubric modes: **architecture** (ADR-grade design decisions, the default), **science** (working-paper desk-screen before submission), and **editorial** (five-lens review of published-grade articles). The critics, the parallel spawn, the liveness gate, and the synthesis rules are identical in every mode; only the rubric the critics answer changes.
 
 ## The problem it solves
 
@@ -14,34 +16,46 @@ The gauntlet fixes both:
 
 ## How it works
 
-You write a short proposal (status, context, what you propose, what it trades, open questions) and drop it in a decisions folder. The skill:
+You write a short proposal (for architecture: status, context, what you propose, what it trades, open questions; for science: the anonymized paper; for editorial: the article draft) and drop it in a work folder. The skill:
 
-1. Writes an adversarial brief that tells the critics exactly what to attack and in what format.
-2. Spawns all enabled critics in parallel, each reading the brief and proposal independently.
-3. Waits for all of them, then shows you each critique verbatim.
-4. Synthesizes: what all critics agreed on (binding), what a majority agreed on (strong), what split, and what a single critic uniquely caught.
-5. You decide: run another round against a revised proposal, or accept and write the decision record.
+1. Writes an adversarial brief from the mode's template (`modes/<mode>.brief-template.md`) that tells the critics exactly what to attack and in what format.
+2. Spawns all enabled critics in parallel, each reading the brief and proposal independently. The helper scripts take `--mode architecture|science|editorial` and load the matching system prompt automatically.
+3. Enforces a liveness gate: every enabled critic either returns a real critique or is explicitly dropped by you. A failed critic is retried once, then the run halts and asks. Three-of-an-intended-four must never be silently synthesized as if four had agreed.
+4. Shows you each critique verbatim.
+5. Synthesizes via a fresh agent: what all critics agreed on (binding), what a majority agreed on (strong), what split, and what a single critic uniquely caught.
+6. You decide: run another round against a revised proposal, or accept and write the decision record.
 
 You iterate until the findings shift from architecture ("the shape is wrong") to specification ("the shape is right, but it is imprecise here, here, and here"). That shift is the signal to stop. See [the worked example](skills/critic-gauntlet/examples/worked-example.md) for a real four-round run.
 
 ## What each critic returns
 
-Every critic answers in the same five-section structure, which is what forces rigor instead of agreeable mush:
+Every critic answers the mode's rubric in the same structure, which is what forces rigor instead of agreeable mush. In architecture mode:
 
-1. **Three biggest holes.** Specific failure modes or real costs, not vague concerns. The cap at three forces prioritization.
-2. **Steel-manned alternatives.** An 80% version (simpler, most of the value, less work) and a 110% version (more rigorous, what you are dismissing). Demanding both directions blocks the lazy "just do less" or "just do more" critique and makes the critic actually engage the design space.
-3. **Unstated assumptions** (at least four). Each with why it might be wrong. Surfaces the foundation the proposal is silently standing on.
-4. **Consequences for the ADR.** What the team regrets in six months if this ships as-is. Forces a time horizon.
-5. **Recommendation.** Ship as-is, ship with named amendments, or kill and reformulate, plus a confidence level. Forces a verdict, not a hedge.
+1. **The boring baseline and the blank-sheet design.** The most standard, right-fit way to do the job, and what a from-scratch design with no sunk cost would look like. If the proposal cannot beat the boring baseline on a demonstrated benefit, the boring baseline wins.
+2. **Three biggest holes.** Specific failure modes or real costs, not vague concerns. The cap at three forces prioritization.
+3. **Steel-manned alternatives.** An 80% version (simpler, most of the value, less work) and a 110% version (more rigorous, what you are dismissing). Demanding both directions blocks the lazy "just do less" or "just do more" critique.
+4. **Unstated assumptions** (at least four), each with why it might be wrong.
+5. **Consequences for the ADR.** What the team regrets in six months if this ships as-is.
+6. **Recommendation.** Ship as-is, ship with named amendments, or kill and reformulate, plus a confidence level. Forces a verdict, not a hedge.
 
-The structure is also why convergence is meaningful: when four models independently fill the same five slots, you can see exactly where they agree and where one caught something the others missed.
+Science mode swaps in a peer-review desk-screen rubric (claim-vs-evidence, identification and confounds, method-question fit, data provenance, re-identification exposure, limitations honesty). Editorial mode scores five lenses 0-10 with quoted evidence (journalistic discipline, defamation and regulatory risk, reader engagement, AI-slop-ness, CTA conversion).
+
+The shared structure is also why convergence is meaningful: when four models independently fill the same slots, you can see exactly where they agree and where one caught something the others missed.
+
+## Decision discipline
+
+The critique stage is not the weak point of a gauntlet; synthesis is. The classic failure: critics unanimously reject an approach, then the same agent that wrote the proposal writes the synthesis and overrides all of them with one persuasive sentence. The skill binds the synthesis so the producer can no longer grade the critics:
+
+- **Convergence binds.** If the critics converge against the proposed approach, that approach may not ship. Overriding convergence requires an explicit, plain-words escalation to the human, never a buried sentence in a synthesis.
+- **The synthesizer is not the proposer.** A fresh agent on a deliberately small model writes the synthesis from the raw critique files, and its output is surfaced verbatim. The thing with ego in the proposal neither writes the verdict nor narrates it.
+- **Proof-of-life before "decided."** No decision record is accepted until one real end-to-end slice runs on real infrastructure. A decision on paper is a hypothesis.
 
 ## The roster
 
 | Critic | Requires | Notes |
 | --- | --- | --- |
-| Claude general-purpose subagent | Claude Code only | Baseline. Always available, no API key. |
-| Codex CLI | `codex` CLI installed + authed | Tends to catch specification bugs. |
+| Claude general-purpose subagent | Claude Code only | Baseline. Always available, no API key. Low noise. |
+| Codex CLI | `codex` CLI installed + authed | Tends to catch specification bugs. Low noise. |
 | Grok | `XAI_API_KEY` | Tends to catch privacy / policy / jurisdictional angles. |
 | Gemini | `GEMINI_API_KEY` | Different training distribution, catches a different class of issue. |
 
@@ -99,17 +113,21 @@ Other dependencies the scripts assume: `bash`, `curl`, and [`jq`](https://jqlang
 The Grok and Gemini scripts pin a specific model at the top of each file. Models move fast and these pins go stale; update them when a provider ships a newer flagship. You can also override per run without editing the file:
 
 ```bash
-GROK_MODEL=grok-4.4 ./grok-critic.sh /path/to/decisions 1
+GROK_MODEL=grok-5 ./grok-critic.sh /path/to/decisions 1
 GEMINI_MODEL=gemini-3.5-pro ./gemini-critic.sh /path/to/decisions 1
 ```
 
-Pins verified current as of 2026-06-03: `grok-4.3`, `gemini-3.1-pro-preview`.
+Pins verified current as of 2026-07-10: `grok-4.5`, `gemini-3.1-pro-preview` (Gemini 3.5 shipped as Flash only; 3.1 Pro remains the reasoning tier). The Claude and Codex critics carry no pin: they run on whatever your Claude Code session and `codex` CLI default to, so they update themselves.
 
 ## When to use it, and when not to
 
-**Use it for** architectural decisions: system shape, delivery mechanism, multi-tenancy model, a new critical-path dependency, repo structure. Anything expensive to change once shipped.
+**Use `--mode architecture` (default) for** architectural decisions: system shape, delivery mechanism, multi-tenancy model, a new critical-path dependency, repo structure. Anything expensive to change once shipped.
 
-**Do not use it for** bug fixes, refactors, or features that live inside an existing shape. The gauntlet costs real attention and 30-60 minutes of elapsed time per decision. Spending that on a small choice is waste.
+**Use `--mode science` for** working papers before submission, when a desk-reject would be costly. Note the data-sovereignty rule: the external API critics read only the anonymized paper, never raw data or anything carrying subject identity.
+
+**Use `--mode editorial` for** flagship, litigious-tier, or template-defining articles before release. Not per-issue: rerun on template changes or periodically.
+
+**Do not use it for** bug fixes, refactors, or features that live inside an existing shape, or drafts still finding their claim. The gauntlet costs real attention and 30-60 minutes of elapsed time per decision. Spending that on a small choice is waste.
 
 ## Cost
 

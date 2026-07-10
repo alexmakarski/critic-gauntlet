@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 # Gemini adversarial critic invocation for the critic-gauntlet skill.
 #
-# Usage: gemini-critic.sh <decisions-folder> <round-number>
+# Usage: gemini-critic.sh <work-folder> <round-number> [--mode architecture|science|editorial]
 # Example: gemini-critic.sh /path/to/decisions/ADR-002-bar 1
+# Example: gemini-critic.sh /path/to/critic-runs/spec-001 1 --mode editorial
 #
 # Reads brief-v<N>.md, proposal-v<N>.md, and any prior round critiques + syntheses
-# from the decisions folder. Builds the prompt, calls the Google AI Studio API,
-# writes critique-v<N>-gemini.md.
+# from the work folder. The --mode flag selects the system-prompt rubric from
+# modes/<mode>.system.txt (default: architecture). Builds the prompt, calls the
+# Google AI Studio API, writes critique-v<N>-gemini.md.
 
 set -euo pipefail
 
 # --- Model pin ---------------------------------------------------------------
-# Verified current 2026-06-03. Override per-run with GEMINI_MODEL=... in the env.
-# Pro tier is preferred over Flash for adversarial reasoning. gemini-3.1-pro-preview
-# is the current reasoning-tier preview. Re-pin when a newer Pro GA replaces it.
+# Verified current 2026-07-10. Override per-run with GEMINI_MODEL=... in the env.
+# Pro tier is preferred over Flash for adversarial reasoning (Gemini 3.5 shipped
+# as Flash only; 3.1 Pro remains the reasoning tier). Re-pin when a newer Pro
+# replaces it.
 MODEL="${GEMINI_MODEL:-gemini-3.1-pro-preview}"
 # -----------------------------------------------------------------------------
 
@@ -126,12 +129,12 @@ USER_PROMPT="Read everything below, then produce the critique.
 ===== BRIEF =====
 $(cat "$BRIEF")
 
-===== PROPOSAL (the target of critique) =====
+===== MATERIAL UNDER REVIEW (the target of critique) =====
 $(cat "$PROPOSAL")
 ${PRIOR_CONTEXT}
 
 ===== TASK =====
-Produce the adversarial critique now. Markdown format. No preamble. Start with the heading and metadata, then the 5 sections."
+Produce the adversarial critique now. Markdown format. No preamble. Start with the heading and metadata, then follow the brief's output format."
 
 PAYLOAD=$(jq -n \
     --arg system "$SYSTEM_PROMPT" \
@@ -165,7 +168,7 @@ fi
 echo "$CONTENT" > "$OUTPUT"
 
 WORDS=$(echo "$CONTENT" | wc -w | tr -d ' ')
-RECOMMENDATION=$(echo "$CONTENT" | grep -iE '(ship.with.amendments|kill.*reformulate|ship.as.is)' | head -1 | tr -d '*' | head -c 80)
+RECOMMENDATION=$( (echo "$CONTENT" | grep -iE '(ship.with.amendments|kill.{0,3}re.?formulate|ship.as.is)' || true) | head -1 | tr -d '*' | head -c 80)
 
 echo "Gemini critique written to $OUTPUT"
 echo "Words: $WORDS"

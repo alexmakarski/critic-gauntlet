@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 # Grok adversarial critic invocation for the critic-gauntlet skill.
 #
-# Usage: grok-critic.sh <decisions-folder> <round-number>
+# Usage: grok-critic.sh <work-folder> <round-number> [--mode architecture|science|editorial]
 # Example: grok-critic.sh /path/to/decisions/ADR-002-bar 1
+# Example: grok-critic.sh /path/to/critic-runs/spec-001 1 --mode editorial
 #
 # Reads brief-v<N>.md, proposal-v<N>.md, and any prior round critiques + syntheses
-# from the decisions folder. Builds the prompt, calls the xAI API, writes critique-v<N>-grok.md.
+# from the work folder. The --mode flag selects the system-prompt rubric from
+# modes/<mode>.system.txt (default: architecture). Builds the prompt, calls the
+# xAI API, writes critique-v<N>-grok.md.
 
 set -euo pipefail
 
 # --- Model pin ---------------------------------------------------------------
-# Verified current 2026-06-03. Override per-run with GROK_MODEL=... in the env.
-# Note: grok-4 was deprecated 2026-05-15 and silently reroutes to grok-4.3.
-# Update this line when xAI ships a newer flagship.
-MODEL="${GROK_MODEL:-grok-4.3}"
+# Verified current 2026-07-10. Override per-run with GROK_MODEL=... in the env.
+# Note: older slugs (grok-4, grok-4.3) are silently rerouted by xAI after
+# deprecation. Update this line when xAI ships a newer flagship.
+MODEL="${GROK_MODEL:-grok-4.5}"
 # -----------------------------------------------------------------------------
 
 if [ "$#" -lt 2 ]; then
@@ -125,12 +128,12 @@ USER_PROMPT="Read everything below, then produce the critique.
 ===== BRIEF =====
 $(cat "$BRIEF")
 
-===== PROPOSAL (the target of critique) =====
+===== MATERIAL UNDER REVIEW (the target of critique) =====
 $(cat "$PROPOSAL")
 ${PRIOR_CONTEXT}
 
 ===== TASK =====
-Produce the adversarial critique now. Markdown format. No preamble. Start with the heading and metadata, then the 5 sections."
+Produce the adversarial critique now. Markdown format. No preamble. Start with the heading and metadata, then follow the brief's output format."
 
 PAYLOAD=$(jq -n \
     --arg model "$MODEL" \
@@ -163,7 +166,7 @@ fi
 echo "$CONTENT" > "$OUTPUT"
 
 WORDS=$(echo "$CONTENT" | wc -w | tr -d ' ')
-RECOMMENDATION=$(echo "$CONTENT" | grep -iE '(ship.with.amendments|kill.*reformulate|ship.as.is)' | head -1 | tr -d '*' | head -c 80)
+RECOMMENDATION=$( (echo "$CONTENT" | grep -iE '(ship.with.amendments|kill.{0,3}re.?formulate|ship.as.is)' || true) | head -1 | tr -d '*' | head -c 80)
 
 echo "Grok critique written to $OUTPUT"
 echo "Words: $WORDS"
