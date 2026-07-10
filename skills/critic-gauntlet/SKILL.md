@@ -1,14 +1,16 @@
 ---
 name: critic-gauntlet
-version: 2.1.0
-description: Run an adversarial critic gauntlet on an architectural proposal. Spawns a Claude general-purpose subagent plus optional Codex CLI, Grok (xAI API), and Gemini (Google AI Studio API) critics in parallel, surfaces raw critic outputs verbatim, then synthesizes. Use for architectural decisions (system shape, delivery mechanism, multi-tenancy model, new critical-path dependency, repo structure).
+version: 2.2.0
+description: Run an adversarial critic gauntlet on a proposal. Spawns a Claude general-purpose subagent plus optional Codex CLI, Grok (xAI API), and Gemini (Google AI Studio API) critics in parallel, surfaces raw critic outputs verbatim, then synthesizes. One harness, three rubric modes selected by a flag: architecture (ADR decisions), science (working-paper peer-review desk-screen), editorial (five-lens article review).
 ---
 
 # Critic Gauntlet
 
-For architectural decisions where the cost of being wrong is high. Forces independent adversarial critics against a proposal, surfaces raw output verbatim before synthesis, and iterates until convergence or specification-level findings emerge.
+For high-stakes work where the cost of being wrong is high. Forces independent adversarial critics against a target, surfaces raw output verbatim before synthesis, and iterates until convergence or specification-level findings emerge.
 
 The value is cross-model disagreement: different model families share different blind spots, so a hole one misses another tends to catch. Convergence across independent models is a strong signal; a lone-critic finding is sometimes the most valuable thing in the round.
+
+The harness is the same in every mode: parallel spawn, liveness gate, raw output verbatim, fresh-agent synthesis, convergence math. What changes per mode is only the rubric (the brief the critics answer) and a small amount of per-mode policy. Modes are selected by a `--mode` flag; see the Modes section.
 
 ## Roster
 
@@ -23,17 +25,36 @@ Only critic 1 is required. The other three are bolt-ons you enable when you have
 
 If you have all four configured, run all four by default. Drop a critic on a given round only when speed matters more than coverage. Grok and Gemini carry higher noise floors than Claude and Codex, so if you are trimming, drop one of those two first.
 
+## Modes
+
+Select the rubric with `--mode architecture|science|editorial` (default `architecture`). Each mode has a brief template in `modes/<mode>.brief-template.md` and an API-critic system prompt in `modes/<mode>.system.txt`. You author the per-run brief from the template; the helper scripts read the system prompt automatically.
+
+| Mode | Use for | Rubric sections |
+| --- | --- | --- |
+| `architecture` | ADR-grade decisions: system shape, delivery mechanism, multi-tenancy model, new critical-path dependency, repo structure | boring baseline, blank-sheet design, three biggest holes, steel-manned 80% and 110% alternatives, unstated assumptions, consequences for ADR, recommendation |
+| `science` | Working papers before submission (SSRN / Zenodo tier) | claim-vs-evidence, identification and confounds, method-question fit, data provenance and reproducibility, re-identification exposure, limitations honesty, recommendation |
+| `editorial` | Published-grade articles before release | five lenses: journalistic discipline, defamation and regulatory risk, reader engagement, ai-slop-ness, CTA conversion; scored 0-10 with quoted evidence |
+
+Posture is identical across modes: no sympathetic openers, lead with the strongest objection, no balanced view, every deduction cites the exact passage, no em-dashes or double-dashes.
+
+Per-mode policy that differs from the architecture default:
+
+- **science data-sovereignty.** The external API critics (Grok, Gemini) are third-party vendors. In science mode they may read ONLY the anonymized paper and its stated public sources, NEVER the raw dataset or any file carrying subject identity. A properly anonymized paper is safe to send; the underlying data and any identity key are not. This is a policy about egress of identified data to outside APIs, not a ban on running multiple critics: an anonymized artifact runs the full roster. The brief template restates this rule in its header.
+- **editorial calibration.** Model families differ in how readily they flag editorial risk; some run lenient on prose and strict on architecture, or the reverse. Do not assume a critic's architecture-mode temperament carries into editorial. Weight by which critics actually converge on quoted evidence.
+
 ## When to invoke
 
-Architectural decisions: system shape, delivery mechanism, multi-tenancy model, a new critical-path dependency, repo structure. Anything where the shape, once shipped, is expensive to change.
+`--mode architecture` (default): system shape, delivery mechanism, multi-tenancy model, a new critical-path dependency, repo structure. Anything where the shape, once shipped, is expensive to change. Non-architectural changes (bug fixes, refactors, feature additions inside an existing shape) do NOT need this. The gauntlet is expensive in attention and time; do not run it on small decisions.
 
-Non-architectural changes (bug fixes, refactors, feature additions inside an existing shape) do NOT need this. The gauntlet is expensive in attention and time. Do not run it on small decisions.
+`--mode science`: before a working paper is submitted (SSRN / Zenodo tier), or when a paper's conclusions are load-bearing enough that a desk-reject would be costly. Not for early drafts still finding their claim.
+
+`--mode editorial`: before releasing a flagship, litigious-tier, or template-defining article (the first specimen of a new format, a piece on a named subject that could prompt a legal response). Not per-issue: rerun on template changes or periodically. Your own publish gate stays the gate; this is a complementary layer.
 
 ## What you need before invoking
 
-1. **A written proposal** at a known file path. Markdown. Should include: status, context, proposal (what you are proposing), what it trades, open questions.
-2. **A decisions folder** to hold artifacts. Suggested convention: `<your-repo>/decisions/ADR-NNN-<topic>/`. The proposal, brief, critiques, and synthesis all live together.
-3. **Optional context files** the critics should read (an existing ARCHITECTURE.md, contributor/AI guidelines, prior critiques if this is round 2+).
+1. **The material under review** at a known file path, saved as `<work-folder>/proposal-v<N>.md`. For architecture that is the ADR proposal (status, context, proposal, what it trades, open questions). For science it is the anonymized paper (plus its sources, subject to the science data-sovereignty rule). For editorial it is the article draft plus its source material and house references.
+2. **A work folder** to hold artifacts. Suggested convention: `<your-repo>/decisions/ADR-NNN-<topic>/` for architecture, `<your-repo>/critic-runs/<slug>/` for science and editorial. The brief, proposal, critiques, and synthesis all live together.
+3. **Optional context files** the critics should read (an existing ARCHITECTURE.md, contributor/AI guidelines, voice/policy docs, prior critiques if this is round 2+), subject to per-mode policy (science withholds identified data from the external API critics).
 
 ## The flow
 
@@ -72,83 +93,29 @@ fi
 
 If only Claude is available, warn the user that this is a degenerate run and ask whether to proceed. Otherwise proceed without prompting.
 
-### Step 2: Write the adversarial brief
+### Step 2: Write the brief
 
-Save to `<decisions-folder>/brief-v<N>.md` where N is the round number.
+Pick the mode. Copy `modes/<mode>.brief-template.md` and fill in the placeholders (title, required reading, prior-round summary, and for editorial/science the product/paper context). Save the filled brief to `<work-folder>/brief-v<N>.md` where N is the round number.
 
-Template:
+Each mode's rubric sections are listed in the Modes table above. Do not hand-write the rubric; use the template. The API-critic system prompt for the mode is applied automatically by the helper scripts from `modes/<mode>.system.txt`; you do not paste it anywhere.
 
-```markdown
-# Adversarial Critic Brief: <ADR title> Round <N>
-
-You are an adversarial architecture critic. Your job is NOT to help, validate, or improve this proposal sympathetically. Your job is to find what is wrong with it, what it glosses over, and what it would cost if shipped.
-
-This is round <N>. <Summarize what prior rounds killed, if applicable. Tell critics not to re-litigate already-converged decisions.>
-
-## Required reading
-
-1. <path to proposal-vN.md>
-2. <path to prior synthesis if round 2+>
-3. <paths to prior critiques if round 2+>
-
-Optional context:
-- <path to ARCHITECTURE.md>
-- <path to contributor or AI guidelines>
-- <any schema or related code>
-
-## What you must produce
-
-A structured critique with these sections in this order:
-
-### 0. The boring baseline (answer this first)
-State the most standard, well-understood, right-fit way to solve THIS specific job. "Boring" means standard and right-fit, NOT fewest new parts: reusing an existing wrong-fit tool to avoid building anything is not the boring baseline, it is a trap. The boring baseline is often a recomposition of parts already in use, or one small standard service on infrastructure already run. Then state why the proposal is not just that. Resist new dependencies, platforms, and novel patterns, not new parts per se. A proposal that cannot beat the boring baseline on a demonstrated (not hypothetical) benefit should lose to it.
-
-### 0.5 The blank-sheet design (diagnostic, answer right after the baseline)
-State what you would build for this job from a blank sheet, with NO existing code, infrastructure, or product, ignoring all sunk cost. Then state the delta from current reality. This is a MIRROR, not a migration mandate: a large delta is a prompt to ask why the system drifted and whether the gap is worth any migration cost, never an instruction to rebuild. If the blank-sheet design and the boring baseline agree, say so plainly (the current shape is a defensible choice, not an accident). If they diverge, the gap is the path-dependence cost the ADR must price explicitly, separating the deltas worth a cutover from the ones to simply keep.
-
-### 1. Three biggest holes
-Specific architectural or operational problems. Concrete failure modes or real costs the proposer is glossing over.
-
-### 2. Steel-manned alternatives
-- 80% alternative: a simpler version that gets most of the value with less change. Name specifically.
-- 110% alternative: a more rigorous end state the proposer is dismissing. Name specifically.
-
-### 3. Unstated assumptions
-At least 4. For each, state why it might be wrong.
-
-### 4. Consequences for ADR
-If this ships as-is, what will the team regret in 6 months?
-
-### 5. Recommendation
-- Ship as-is, OR
-- Ship with named amendments (list them), OR
-- Kill, re-formulate (with what to re-formulate around)
-
-State confidence level: high / moderate / low / unknown.
-
-## Adversarial posture
-
-- No sympathetic openers ("great proposal", "well thought out", "you're right")
-- No balanced view; surface the strongest case against
-- Lead with the strongest objection
-- Read prior critiques if any to calibrate rigor
-- No em-dashes or double-dashes anywhere in output
-- Markdown. No introduction. No closing pleasantry.
-```
+The shared posture in every brief: no sympathetic openers, lead with the strongest objection, no balanced view, every deduction cites the exact passage, no em-dashes or double-dashes, markdown, no closing pleasantry.
 
 ### Step 3: Spawn the critics in parallel
 
 In a single message, fire all enabled critic tool calls.
 
-**Critic 1: Claude general-purpose subagent.** Use the Agent tool with `subagent_type: "general-purpose"`. Tell the agent to read the brief, read the required files, write its critique to `<decisions-folder>/critique-v<N>-claude.md`, and confirm with a one-line output. Run in background.
+All critics answer the same brief and follow ITS output format (which differs by mode: the architecture brief has 5 sections, science has 7, editorial has the five-lens format). Do not hardcode "5 sections" in any critic prompt; say "follow the brief's output format." The helper scripts take `--mode <mode>` and load the matching system prompt; the Claude subagent and Codex read the format from the brief itself.
 
-**Critic 2: Codex CLI.** Use Bash with `codex exec --sandbox workspace-write --skip-git-repo-check --cd <decisions-folder> "<inline prompt>"`. The prompt mirrors the Claude one. Pipe `</dev/null` to close stdin (Codex hangs on stdin otherwise). Pipe stdout through `tail -30` to keep the bash output bounded. Run in background.
+**Critic 1: Claude general-purpose subagent.** Use the Agent tool with `subagent_type: "general-purpose"`. Tell the agent to read the brief, read the required files, follow the brief's output format, write its critique to `<work-folder>/critique-v<N>-claude.md`, and confirm with a one-line output. Run in background.
 
-**Critic 3: Grok via the xAI API.** Use the helper script `grok-critic.sh` from this skill folder. It reads `XAI_API_KEY` from env (or a `.env` / shell rc fallback), concatenates brief + proposal + prior critiques, calls the xAI API, and writes `critique-v<N>-grok.md`. Run via Bash in background.
+**Critic 2: Codex CLI.** Use Bash with `codex exec --sandbox workspace-write --skip-git-repo-check --cd <work-folder> "<inline prompt>"`. The prompt tells Codex to follow the brief's output format. Pipe `</dev/null` to close stdin (Codex hangs on stdin otherwise). Pipe stdout through `tail -30` to keep the bash output bounded. Run in background.
 
-**Critic 4: Gemini via the Google AI Studio API.** Use the helper script `gemini-critic.sh` from this skill folder. Same shape as Grok. Reads `GEMINI_API_KEY`, calls the Google AI Studio API, writes `critique-v<N>-gemini.md`. Run via Bash in background.
+**Critic 3: Grok via the xAI API.** Use the helper script `grok-critic.sh <work-folder> <N> --mode <mode>` from this skill folder. It reads `XAI_API_KEY` from env (or a `.env` / shell rc fallback), loads the mode system prompt, concatenates brief + proposal + prior critiques, calls the xAI API, and writes `critique-v<N>-grok.md`. Run via Bash in background.
 
-The helper scripts take two arguments: the decisions folder path and the round number. Both auto-pick up prior-round critiques when N > 1.
+**Critic 4: Gemini via the Google AI Studio API.** Use the helper script `gemini-critic.sh <work-folder> <N> --mode <mode>` from this skill folder. Same shape as Grok. Reads `GEMINI_API_KEY`, loads the mode system prompt, calls the Google AI Studio API, writes `critique-v<N>-gemini.md`. Run via Bash in background. In science mode, confirm the proposal file handed to the external critics is the anonymized artifact only.
+
+The helper scripts take the work folder path and the round number, plus an optional `--mode` (default architecture). Both auto-pick up prior-round critiques when N > 1.
 
 ### Step 4: Verify every critic returned a real critique (liveness gate)
 
@@ -158,7 +125,7 @@ Typical timing: Claude subagent 2-3 min, Codex CLI 5-10 min, Grok and Gemini und
 
 **Success condition (same gate for all critics).** A critic passed only if ALL hold:
 1. Its `critique-v<N>-<critic>.md` file exists and is at least ~500 bytes. Real critiques run 3 KB and up; anything smaller is a stub or error.
-2. The file is the actual 5-section critique, not an error payload. Reject if it leads with `ERROR:` or contains raw API error JSON.
+2. The file is the actual multi-section critique in the brief's format, not an error payload. Reject if it leads with `ERROR:` or contains raw API error JSON.
 3. For the Bash critics (Codex, Grok, Gemini): the process exit code was 0. The helper scripts `set -euo pipefail` and exit non-zero on any missing-key / API / empty-response failure. Capture the last stderr line as the failure reason.
 4. For the Claude subagent: the Agent tool returned success and the file was written. A subagent that erred without writing the file is a fail even if it returned some text.
 
@@ -216,8 +183,8 @@ If Path B: write `decision.md` with the chosen architecture, the load-bearing fi
 
 ## Files this skill writes
 
-Per round:
-- `brief-v<N>.md`
+Per round, in the work folder:
+- `brief-v<N>.md` (authored from `modes/<mode>.brief-template.md`)
 - `critique-v<N>-claude.md`
 - `critique-v<N>-codex.md`
 - `critique-v<N>-grok.md`
@@ -225,8 +192,16 @@ Per round:
 - `synthesis-v<N>.md`
 
 After acceptance:
-- `decision.md`
+- `decision.md` (architecture) / accepted paper or article (science, editorial)
 - Updated `ARCHITECTURE.md` if relevant
+
+## Files this skill ships (in the skill folder, do not delete)
+
+- `SKILL.md` (this file, the harness)
+- `grok-critic.sh`, `gemini-critic.sh` (mode-agnostic critic scripts; take `--mode`)
+- `modes/architecture.system.txt` + `modes/architecture.brief-template.md`
+- `modes/science.system.txt` + `modes/science.brief-template.md`
+- `modes/editorial.system.txt` + `modes/editorial.brief-template.md`
 
 ## Worked example
 
@@ -252,9 +227,9 @@ Brief location: brief-v<N>.md in this folder.
 
 ---
 
-Then the 5 sections.
+Then follow the brief's output format exactly.
 
-STEP 4: After writing, output ONE LINE: 'Critique written to <path>, N words, recommendation: <ship-as-is | amendments | kill>'
+STEP 4: After writing, output ONE LINE: 'Critique written to <path>, N words, recommendation: <the brief's recommendation vocabulary>'
 
 POSTURE:
 - Adversarial. Find what is wrong.
@@ -266,6 +241,8 @@ POSTURE:
 ### Synthesis agent invocation
 
 The synthesis is written by a FRESH general-purpose agent, never the main (proposer) session (Step 5.5 rule 3). Spawn it with the Agent tool, `subagent_type: "general-purpose"`, `model: "haiku"` (a deliberately small model: the synthesis job is near-mechanical, and a less-clever judge cannot rationalize past the critics), and pass this prompt verbatim. Do not summarize the critiques for it; it reads them itself. Surface its output to the user verbatim.
+
+The prompt below is written for architecture mode. For science and editorial, keep the convergence logic and neutral-judge posture unchanged, but swap the recommendation vocabulary (science: minor / major revisions / reject-rescope; editorial: publish / blocker-edits / hold) and drop the boring-baseline and blank-sheet bullets, which are architecture-only.
 
 ```
 You are the neutral synthesizer for <ADR-title> round <N>. You did NOT write the proposal and have no stake in it. Treat the proposal as a hypothesis to disprove.
@@ -287,7 +264,7 @@ POSTURE: neutral judge, not advocate. No sympathetic opener. Lead with what the 
 ### Codex CLI invocation
 
 ```bash
-codex exec --sandbox workspace-write --skip-git-repo-check --cd <decisions-folder> "<same prompt template>" </dev/null 2>&1 | tail -30
+codex exec --sandbox workspace-write --skip-git-repo-check --cd <work-folder> "<same prompt template>" </dev/null 2>&1 | tail -30
 ```
 
 Important: `</dev/null` is required. Without it, `codex exec` waits on stdin and hangs indefinitely.
@@ -295,15 +272,15 @@ Important: `</dev/null` is required. Without it, `codex exec` waits on stdin and
 ### Grok invocation
 
 ```bash
-./grok-critic.sh <decisions-folder> <round-number>
+./grok-critic.sh <work-folder> <round-number> [--mode architecture|science|editorial]
 ```
 
-Reads `brief-v<N>.md` and `proposal-v<N>.md`, builds the prompt, calls the xAI API, writes `critique-v<N>-grok.md`. Requires `XAI_API_KEY`. The model is pinned at the top of the script (override per run with `GROK_MODEL=...`).
+Reads `brief-v<N>.md` and `proposal-v<N>.md`, loads the mode system prompt from `modes/<mode>.system.txt` (default architecture), builds the prompt, calls the xAI API, writes `critique-v<N>-grok.md`. Requires `XAI_API_KEY`. The model is pinned at the top of the script (override per run with `GROK_MODEL=...`).
 
 ### Gemini invocation
 
 ```bash
-./gemini-critic.sh <decisions-folder> <round-number>
+./gemini-critic.sh <work-folder> <round-number> [--mode architecture|science|editorial]
 ```
 
 Same shape as Grok. Requires `GEMINI_API_KEY`. The model is pinned at the top of the script (override per run with `GEMINI_MODEL=...`). Free tier covers normal usage; paid tier is sub-penny per critique.
