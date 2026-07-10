@@ -104,7 +104,7 @@ export XAI_API_KEY
 PRIOR_CONTEXT=""
 if [ "$ROUND" -gt 1 ]; then
     PRIOR_ROUND=$((ROUND - 1))
-    for f in "$DIR/synthesis-v${PRIOR_ROUND}.md" "$DIR/critique-v${PRIOR_ROUND}-claude.md" "$DIR/critique-v${PRIOR_ROUND}-codex.md" "$DIR/critique-v${PRIOR_ROUND}-grok.md"; do
+    for f in "$DIR/synthesis-v${PRIOR_ROUND}.md" "$DIR/critique-v${PRIOR_ROUND}-claude.md" "$DIR/critique-v${PRIOR_ROUND}-codex.md" "$DIR/critique-v${PRIOR_ROUND}-grok.md" "$DIR/critique-v${PRIOR_ROUND}-gemini.md" "$DIR/critique-v${PRIOR_ROUND}-deepseek.md"; do
         if [ -f "$f" ]; then
             PRIOR_CONTEXT="$PRIOR_CONTEXT
 

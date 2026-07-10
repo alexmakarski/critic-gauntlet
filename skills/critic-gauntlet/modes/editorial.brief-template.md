@@ -22,7 +22,7 @@ This is round <N>. <Summarize what prior rounds found and which edits were accep
 2. Second pass: read with the atoms files open. Check claims, sourcing, framing.
 3. Then score the five lenses below.
 
-API-critic mechanics: the Grok and Gemini helper scripts enforce the cold first pass mechanically in editorial mode. A first API call sees the article alone and returns the cold-read log; the brief, atoms, and that log arrive together only in a second call. Agentic critics (Claude subagent, Codex) follow the protocol by reading files in the stated order and writing the cold-read notes before opening the atoms.
+API-critic mechanics: the Grok, Gemini, and DeepSeek helper scripts enforce the cold first pass mechanically in editorial mode. A first API call sees the article alone and returns the cold-read log; the brief, atoms, and that log arrive together only in a second call. Agentic critics (Claude subagent, Codex) follow the protocol by reading files in the stated order and writing the cold-read notes before opening the atoms.
 
 Score each lens 0 to 10. Every deduction must cite the exact sentence or passage that caused it. No deduction without a quote. If a lens has no findings, say so and score it high; do not invent problems to appear rigorous.
 

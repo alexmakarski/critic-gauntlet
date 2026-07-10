@@ -1,6 +1,6 @@
 # Critic Gauntlet
 
-A Claude Code skill that pits four AI models against your work as adversarial critics, surfaces their raw objections to you unfiltered, and synthesizes where they agree. For decisions and documents you cannot cheaply reverse.
+A Claude Code skill that pits five AI models against your work as adversarial critics, surfaces their raw objections to you unfiltered, and synthesizes where they agree. For decisions and documents you cannot cheaply reverse.
 
 One harness, three rubric modes: **architecture** (ADR-grade design decisions, the default), **science** (working-paper desk-screen before submission), and **editorial** (five-lens review of published-grade articles). The critics, the parallel spawn, the liveness gate, and the synthesis rules are identical in every mode; only the rubric the critics answer changes.
 
@@ -11,7 +11,7 @@ When you ask one model to review your design, you get one model's blind spots ba
 The gauntlet fixes both:
 
 1. **Adversarial framing.** Every critic is instructed to find what is wrong, lead with the strongest objection, and refuse sympathetic openers. No "great proposal." It steel-mans a simpler alternative and a more rigorous one, lists the unstated assumptions, and names what the team will regret in six months.
-2. **Cross-model diversity.** Four different model families critique in parallel: Claude, OpenAI's Codex, xAI's Grok, and Google's Gemini. Different families share different blind spots, so a hole one misses, another tends to catch. When independent models converge on the same objection, that is a strong signal. When one lone model catches something the others missed, that is often the most valuable finding in the round.
+2. **Cross-model diversity.** Five different model families critique in parallel: Claude, OpenAI's Codex, xAI's Grok, Google's Gemini, and DeepSeek. Different families share different blind spots, so a hole one misses, another tends to catch. When independent models converge on the same objection, that is a strong signal. When one lone model catches something the others missed, that is often the most valuable finding in the round.
 3. **Raw output, then synthesis.** You see every critic's verbatim output before anything summarizes it. The synthesizer cannot quietly drop a finding it disagrees with, because you have already read the original.
 
 ## How it works
@@ -20,7 +20,7 @@ You write a short proposal (for architecture: status, context, what you propose,
 
 1. Writes an adversarial brief from the mode's template (`modes/<mode>.brief-template.md`) that tells the critics exactly what to attack and in what format.
 2. Spawns all enabled critics in parallel, each reading the brief and proposal independently. The helper scripts take `--mode architecture|science|editorial` and load the matching system prompt automatically.
-3. Enforces a liveness gate: every enabled critic either returns a real critique or is explicitly dropped by you. A failed critic is retried once, then the run halts and asks. Three-of-an-intended-four must never be silently synthesized as if four had agreed.
+3. Enforces a liveness gate: every enabled critic either returns a real critique or is explicitly dropped by you. A failed critic is retried once, then the run halts and asks. A partial roster must never be silently synthesized as if the full roster had agreed.
 4. Shows you each critique verbatim.
 5. Synthesizes via a fresh agent: what all critics agreed on (binding), what a majority agreed on (strong), what split, and what a single critic uniquely caught.
 6. You decide: run another round against a revised proposal, or accept and write the decision record.
@@ -40,7 +40,7 @@ Every critic answers the mode's rubric in the same structure, which is what forc
 
 Science mode swaps in a peer-review desk-screen rubric (claim-vs-evidence, identification and confounds, method-question fit, data provenance, re-identification exposure, limitations honesty). Editorial mode scores five lenses 0-10 with quoted evidence (journalistic discipline, defamation and regulatory risk, reader engagement, AI-slop-ness, CTA conversion).
 
-The shared structure is also why convergence is meaningful: when four models independently fill the same slots, you can see exactly where they agree and where one caught something the others missed.
+The shared structure is also why convergence is meaningful: when five models independently fill the same slots, you can see exactly where they agree and where one caught something the others missed.
 
 ## Decision discipline
 
@@ -58,8 +58,9 @@ The critique stage is not the weak point of a gauntlet; synthesis is. The classi
 | Codex CLI | `codex` CLI installed + authed | Tends to catch specification bugs. Low noise. |
 | Grok | `XAI_API_KEY` | Tends to catch privacy / policy / jurisdictional angles. |
 | Gemini | `GEMINI_API_KEY` | Different training distribution, catches a different class of issue. |
+| DeepSeek | `DEEPSEEK_API_KEY` | A training distribution and RLHF lineage unlike the other four. Newest seat: uncalibrated, so it corroborates but does not count toward binding convergence until proven over several rounds. |
 
-**Only the Claude subagent is required.** The other three are optional bolt-ons. But the entire value proposition is models disagreeing, so the more you can enable, the better the result. One critic is a code review. Four critics arguing is the gauntlet. If you can only run two or three, you still get most of the benefit; if you can run all four on a decision that matters, do.
+**Only the Claude subagent is required.** The other four are optional bolt-ons. But the entire value proposition is models disagreeing, so the more you can enable, the better the result. One critic is a code review. Several critics arguing is the gauntlet. If you can only run two or three, you still get most of the benefit; if you can run the full roster on a decision that matters, do.
 
 ## Install
 
@@ -104,20 +105,28 @@ export XAI_API_KEY=your-key
 export GEMINI_API_KEY=your-key
 ```
 
+**DeepSeek:** get a [Fireworks API key](https://fireworks.ai) (the default endpoint) or a first-party key at platform.deepseek.com, and set it:
+
+```bash
+export DEEPSEEK_API_KEY=your-key
+```
+
+Data-sovereignty note: the default endpoint is Fireworks, a US host serving the MIT open weights, so the forgot-to-configure failure mode is an error, not silent egress. DeepSeek's first-party API is PRC-hosted (prompt data stored in the PRC); opt into it with `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1` and `DEEPSEEK_MODEL=deepseek-v4-pro`. Any OpenAI-compatible endpoint works, including self-hosted vLLM, and each critique records which endpoint produced it.
+
 The helper scripts resolve keys from the environment first, then from a `.env` file in the skill folder or your home directory, then from common shell rc files (`.zshrc`, `.bashrc`, `.bash_profile`, `.profile`). The exported-env path is the most reliable. See [.env.example](skills/critic-gauntlet/.env.example).
 
 Other dependencies the scripts assume: `bash`, `curl`, and [`jq`](https://jqlang.github.io/jq/).
 
 ## Model pins
 
-The Grok and Gemini scripts pin a specific model at the top of each file. Models move fast and these pins go stale; update them when a provider ships a newer flagship. You can also override per run without editing the file:
+The Grok, Gemini, and DeepSeek scripts pin a specific model at the top of each file. Models move fast and these pins go stale; update them when a provider ships a newer flagship. You can also override per run without editing the file:
 
 ```bash
 GROK_MODEL=grok-5 ./grok-critic.sh /path/to/decisions 1
 GEMINI_MODEL=gemini-3.5-pro ./gemini-critic.sh /path/to/decisions 1
 ```
 
-Pins verified current as of 2026-07-10: `grok-4.5`, `gemini-3.1-pro-preview` (Gemini 3.5 shipped as Flash only; 3.1 Pro remains the reasoning tier). The Claude and Codex critics carry no pin: they run on whatever your Claude Code session and `codex` CLI default to, so they update themselves.
+Pins verified current as of 2026-07-10: `grok-4.5`, `gemini-3.1-pro-preview` (Gemini 3.5 shipped as Flash only; 3.1 Pro remains the reasoning tier), `accounts/fireworks/models/deepseek-v4-pro` (Fireworks' id for V4-Pro; on the first-party API use `deepseek-v4-pro`, and note the legacy deepseek-chat / deepseek-reasoner slugs retire 2026-07-24). The Claude and Codex critics carry no pin: they run on whatever your Claude Code session and `codex` CLI default to, so they update themselves.
 
 ## When to use it, and when not to
 
@@ -131,7 +140,7 @@ Pins verified current as of 2026-07-10: `grok-4.5`, `gemini-3.1-pro-preview` (Ge
 
 ## Cost
 
-Per round with all four critics: the two API critics run roughly $0.05 each (Gemini's free tier often covers it); Claude and Codex are included in their subscriptions. A typical 3-4 round decision costs $0.20-$0.30 in API spend and 30-60 minutes spread across a session.
+Per round with the full roster: the API critics run roughly $0.05 each (Gemini's free tier often covers it); Claude and Codex are included in their subscriptions. A typical 3-4 round decision costs $0.20-$0.30 in API spend and 30-60 minutes spread across a session.
 
 ## License
 

@@ -1,24 +1,38 @@
 #!/usr/bin/env bash
-# Gemini adversarial critic invocation for the critic-gauntlet skill.
+# DeepSeek adversarial critic invocation for the critic-gauntlet skill.
 #
-# Usage: gemini-critic.sh <work-folder> <round-number> [--mode architecture|science|editorial]
-# Example: gemini-critic.sh /path/to/decisions/ADR-002-bar 1
-# Example: gemini-critic.sh /path/to/critic-runs/spec-001 1 --mode editorial
+# Usage: deepseek-critic.sh <work-folder> <round-number> [--mode architecture|science|editorial]
+# Example: deepseek-critic.sh /path/to/decisions/ADR-002-bar 1
+# Example: deepseek-critic.sh /path/to/critic-runs/spec-001 1 --mode editorial
 #
 # Reads brief-v<N>.md, proposal-v<N>.md, and any prior round critiques + syntheses
 # from the work folder. The --mode flag selects the system-prompt rubric from
-# modes/<mode>.system.txt (default: architecture). Builds the prompt, calls the
-# Google AI Studio API, writes critique-v<N>-gemini.md.
+# modes/<mode>.system.txt (default: architecture). Builds the prompt, calls an
+# OpenAI-compatible chat-completions endpoint, writes critique-v<N>-deepseek.md.
+#
+# DATA SOVEREIGNTY: the default endpoint is Fireworks (US-hosted serverless
+# serving the MIT open weights), chosen so the forgot-to-configure failure mode
+# is a loud model-id error, never silent egress to a PRC vendor. DeepSeek's
+# first-party API (api.deepseek.com/v1, model deepseek-v4-pro) is PRC-hosted
+# (prompt data stored in the PRC, no DPA); opt into it deliberately via
+# DEEPSEEK_BASE_URL + DEEPSEEK_MODEL. Any OpenAI-compatible host works,
+# including self-hosted vLLM. The critique header records which endpoint
+# produced it.
 
 set -euo pipefail
 
 # --- Model pin ---------------------------------------------------------------
-# Verified current 2026-07-10. Override per-run with GEMINI_MODEL=... in the env.
-# Pro tier is preferred over Flash for adversarial reasoning (Gemini 3.5 shipped
-# as Flash only; 3.1 Pro remains the reasoning tier). Re-pin when a newer Pro
-# replaces it.
-MODEL="${GEMINI_MODEL:-gemini-3.1-pro-preview}"
+# Verified current 2026-07-10. Override per-run with DEEPSEEK_MODEL=... in the env.
+# Default is Fireworks' V4-Pro id. On first-party api.deepseek.com use
+# deepseek-v4-pro (legacy deepseek-chat/deepseek-reasoner slugs retire
+# 2026-07-24). Update when DeepSeek ships a newer flagship.
+MODEL="${DEEPSEEK_MODEL:-accounts/fireworks/models/deepseek-v4-pro}"
+# --- Endpoint ----------------------------------------------------------------
+# OpenAI-compatible base URL, /v1 included. Default: Fireworks, US-hosted.
+BASE_URL="${DEEPSEEK_BASE_URL:-https://api.fireworks.ai/inference/v1}"
 # -----------------------------------------------------------------------------
+
+ENDPOINT_HOST="${BASE_URL#*://}"; ENDPOINT_HOST="${ENDPOINT_HOST%%/*}"
 
 if [ "$#" -lt 2 ]; then
     echo "Usage: $0 <work-folder> <round-number> [--mode architecture|science|editorial]" >&2
@@ -61,7 +75,7 @@ fi
 
 BRIEF="$DIR/brief-v${ROUND}.md"
 PROPOSAL="$DIR/proposal-v${ROUND}.md"
-OUTPUT="$DIR/critique-v${ROUND}-gemini.md"
+OUTPUT="$DIR/critique-v${ROUND}-deepseek.md"
 
 if [ ! -f "$BRIEF" ]; then
     echo "ERROR: brief not found: $BRIEF" >&2
@@ -94,12 +108,12 @@ resolve_key() {
     return 1
 }
 
-if ! GEMINI_API_KEY="$(resolve_key GEMINI_API_KEY)"; then
-    echo "ERROR: GEMINI_API_KEY not found in env, .env, or shell rc files (.zshrc/.bashrc/.bash_profile/.profile)" >&2
-    echo "Set it with: export GEMINI_API_KEY=your-key" >&2
+if ! DEEPSEEK_API_KEY="$(resolve_key DEEPSEEK_API_KEY)"; then
+    echo "ERROR: DEEPSEEK_API_KEY not found in env, .env, or shell rc files (.zshrc/.bashrc/.bash_profile/.profile)" >&2
+    echo "Set it with: export DEEPSEEK_API_KEY=your-key" >&2
     exit 1
 fi
-export GEMINI_API_KEY
+export DEEPSEEK_API_KEY
 
 # Collect prior-round artifacts if this is round 2+
 PRIOR_CONTEXT=""
@@ -126,26 +140,25 @@ COLD_BLOCK=""
 if [ "$MODE" = "editorial" ]; then
     COLD_SYSTEM="You are an independent editorial critic on your FIRST pass over an article. You have not seen the brief or source materials yet; that is deliberate. Read the article cold, top to bottom. Produce ONLY your cold-read log: where your attention flagged, where you got confused, where you stopped believing, whether you would have kept reading if it landed in your inbox. Quote the exact passages. No em-dashes. No double hyphens. No preamble, no summary of the article, no verdict."
     COLD_PAYLOAD=$(jq -n \
+        --arg model "$MODEL" \
         --arg system "$COLD_SYSTEM" \
         --arg user "$(cat "$PROPOSAL")" \
         '{
-            systemInstruction: {
-                parts: [{text: $system}]
-            },
-            contents: [
-                {role: "user", parts: [{text: $user}]}
+            model: $model,
+            messages: [
+                {role: "system", content: $system},
+                {role: "user", content: $user}
             ],
-            generationConfig: {
-                temperature: 0.3,
-                maxOutputTokens: 8000
-            }
+            temperature: 0.3,
+            max_tokens: 8000
         }')
-    COLD_RESPONSE=$(curl -sS "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}" \
+    COLD_RESPONSE=$(curl -sS "${BASE_URL%/}/chat/completions" \
+        -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
         -H "Content-Type: application/json" \
         -d "$COLD_PAYLOAD")
-    COLD_NOTES=$(echo "$COLD_RESPONSE" | jq -r '.candidates[0].content.parts[0].text // empty')
+    COLD_NOTES=$(echo "$COLD_RESPONSE" | jq -r '.choices[0].message.content // empty')
     if [ -z "$COLD_NOTES" ]; then
-        echo "ERROR: empty cold-read response from Google AI Studio API (editorial two-call, call 1)" >&2
+        echo "ERROR: empty cold-read response from $ENDPOINT_HOST (editorial two-call, call 1)" >&2
         echo "$COLD_RESPONSE" >&2
         exit 1
     fi
@@ -160,8 +173,8 @@ fi
 SYSTEM_PROMPT=$(cat "$SYSTEM_FILE")
 SYSTEM_PROMPT="${SYSTEM_PROMPT//\{\{ROUND\}\}/$ROUND}"
 SYSTEM_PROMPT="${SYSTEM_PROMPT//\{\{DATE\}\}/$DATE}"
-SYSTEM_PROMPT="${SYSTEM_PROMPT//\{\{CRITIC\}\}/Gemini (Google AI Studio API direct)}"
-SYSTEM_PROMPT="${SYSTEM_PROMPT//\{\{MODEL\}\}/$MODEL via Google AI Studio API direct}"
+SYSTEM_PROMPT="${SYSTEM_PROMPT//\{\{CRITIC\}\}/DeepSeek (API direct)}"
+SYSTEM_PROMPT="${SYSTEM_PROMPT//\{\{MODEL\}\}/$MODEL via $ENDPOINT_HOST}"
 
 USER_PROMPT="Read everything below, then produce the critique.
 
@@ -176,29 +189,28 @@ ${PRIOR_CONTEXT}${COLD_BLOCK}
 Produce the adversarial critique now. Markdown format. No preamble. Start with the heading and metadata, then follow the brief's output format."
 
 PAYLOAD=$(jq -n \
+    --arg model "$MODEL" \
     --arg system "$SYSTEM_PROMPT" \
     --arg user "$USER_PROMPT" \
     '{
-        systemInstruction: {
-            parts: [{text: $system}]
-        },
-        contents: [
-            {role: "user", parts: [{text: $user}]}
+        model: $model,
+        messages: [
+            {role: "system", content: $system},
+            {role: "user", content: $user}
         ],
-        generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 32000
-        }
+        temperature: 0.3,
+        max_tokens: 16000
     }')
 
-RESPONSE=$(curl -sS "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}" \
+RESPONSE=$(curl -sS "${BASE_URL%/}/chat/completions" \
+    -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD")
 
-CONTENT=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text // .error.message // "ERROR: no content"')
+CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // .error // "ERROR: no content"')
 
 if [ -z "$CONTENT" ] || [ "$CONTENT" = "null" ] || [ "$CONTENT" = "ERROR: no content" ]; then
-    echo "ERROR: empty or failed response from Google AI Studio API" >&2
+    echo "ERROR: empty response from $ENDPOINT_HOST" >&2
     echo "Full response:" >&2
     echo "$RESPONSE" >&2
     exit 1
@@ -209,6 +221,6 @@ echo "$CONTENT" > "$OUTPUT"
 WORDS=$(echo "$CONTENT" | wc -w | tr -d ' ')
 RECOMMENDATION=$( (echo "$CONTENT" | grep -iE '(ship.with.amendments|kill.{0,3}re.?formulate|ship.as.is)' || true) | head -1 | tr -d '*' | head -c 80)
 
-echo "Gemini critique written to $OUTPUT"
+echo "DeepSeek critique written to $OUTPUT (endpoint: $ENDPOINT_HOST)"
 echo "Words: $WORDS"
 echo "Recommendation snippet: $RECOMMENDATION"
