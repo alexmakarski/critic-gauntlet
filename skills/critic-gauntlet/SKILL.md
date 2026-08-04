@@ -1,7 +1,7 @@
 ---
 name: critic-gauntlet
-version: 2.4.1
-description: Run an adversarial critic gauntlet on a proposal. Spawns a Claude general-purpose subagent plus optional Codex CLI, Grok (xAI API), Gemini (Google AI Studio API), and DeepSeek (any OpenAI-compatible endpoint) critics in parallel, surfaces raw critic outputs verbatim, then synthesizes. One harness, three rubric modes selected by a flag: architecture (ADR decisions), science (working-paper peer-review desk-screen), editorial (five-lens article review).
+version: 2.5.0
+description: Run an adversarial critic gauntlet on a proposal. Spawns a sandboxed Claude critic subagent plus optional Codex CLI, Grok (xAI API), Gemini (Google AI Studio API), and DeepSeek (any OpenAI-compatible endpoint) critics in parallel, surfaces raw critic outputs verbatim, then synthesizes. One harness, three rubric modes selected by a flag: architecture (ADR decisions), science (working-paper peer-review desk-screen), editorial (five-lens article review).
 ---
 
 # Critic Gauntlet
@@ -16,7 +16,7 @@ The harness is the same in every mode: parallel spawn, liveness gate, raw output
 
 The full roster is five critics:
 
-1. **Claude general-purpose subagent** (baseline, always available, no API key, included with Claude Code)
+1. **Claude critic subagent** (baseline, always available, no API key, included with Claude Code). Spawn it least-privilege, never as `general-purpose`; see "The blast-radius rule".
 2. **Codex CLI** (requires the `codex` CLI installed and authenticated)
 3. **Grok via the xAI API** (requires `XAI_API_KEY`)
 4. **Gemini via the Google AI Studio API** (requires `GEMINI_API_KEY`)
@@ -68,7 +68,7 @@ Before doing anything else, determine which critics are available on this machin
 echo "Critic roster:"
 
 # Claude (always available)
-echo "  Claude general-purpose subagent: available"
+echo "  Claude gauntlet-critic subagent: available"
 
 # Codex CLI
 if command -v codex &>/dev/null; then
@@ -115,9 +115,9 @@ In a single message, fire all enabled critic tool calls.
 
 All critics answer the same brief and follow ITS output format (which differs by mode: the architecture brief has 5 sections, science has 7, editorial has the five-lens format). Do not hardcode "5 sections" in any critic prompt; say "follow the brief's output format." The helper scripts take `--mode <mode>` and load the matching system prompt; the Claude subagent and Codex read the format from the brief itself.
 
-**Critic 1: Claude general-purpose subagent.** Use the Agent tool with `subagent_type: "general-purpose"`. Tell the agent to read the brief, read the required files, follow the brief's output format, write its critique to `<work-folder>/critique-v<N>-claude.md`, and confirm with a one-line output. Run in background.
+**Critic 1: Claude critic subagent.** Use the Agent tool with `subagent_type: "gauntlet-critic"`. Tell the agent to read the brief, read the required files, follow the brief's output format, write its critique to `<work-folder>/critique-v<N>-claude.md`, and confirm with a one-line output. Run in background.
 
-**Critic 2: Codex CLI.** Use Bash with `codex exec --sandbox workspace-write --skip-git-repo-check --cd <work-folder> "<inline prompt>"`. The prompt tells Codex to follow the brief's output format. Pipe `</dev/null` to close stdin (Codex hangs on stdin otherwise). Pipe stdout through `tail -30` to keep the bash output bounded. Run in background.
+**Critic 2: Codex CLI.** Use Bash with `codex exec --sandbox read-only --skip-git-repo-check --cd <work-folder> "<inline prompt>"`. The prompt tells Codex to follow the brief's output format. Pipe `</dev/null` to close stdin (Codex hangs on stdin otherwise). Pipe stdout through `tail -30` to keep the bash output bounded. Run in background.
 
 **Critic 3: Grok via the xAI API.** Use the helper script `grok-critic.sh <work-folder> <N> --mode <mode>` from this skill folder. It reads `XAI_API_KEY` from env (or a `.env` / shell rc fallback), loads the mode system prompt, concatenates brief + proposal + prior critiques, calls the xAI API, and writes `critique-v<N>-grok.md`. Run via Bash in background.
 
@@ -126,6 +126,22 @@ All critics answer the same brief and follow ITS output format (which differs by
 **Critic 5: DeepSeek via an OpenAI-compatible endpoint.** Use the helper script `deepseek-critic.sh <work-folder> <N> --mode <mode>` from this skill folder. Same shape as Grok; reads `DEEPSEEK_API_KEY`. The endpoint defaults to Fireworks (US-hosted, serving the MIT open weights; model id `accounts/fireworks/models/deepseek-v4-pro`). DeepSeek's first-party API is PRC-hosted; opt into it deliberately via `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1` + `DEEPSEEK_MODEL=deepseek-v4-pro`, and never for material that must not egress to a PRC vendor. Self-hosted vLLM works the same way. The critique header records the serving endpoint. Writes `critique-v<N>-deepseek.md`. Run via Bash in background.
 
 The helper scripts take the work folder path and the round number, plus an optional `--mode` (default architecture). Both auto-pick up prior-round critiques when N > 1.
+
+### The blast-radius rule (read before Step 2, it is newer than the rest of this file)
+
+**Every agent this skill spawns runs least-privilege: `Read, Grep, Glob, Write` and nothing else. Codex runs `--sandbox read-only`.**
+
+This is a repair, not hygiene. On 2026-08-02, during round 1 of a real architecture decision, two critics were spawned the way this file used to say (the Claude critic as a full-tool `general-purpose` agent, Codex under `--sandbox workspace-write`). Between them they edited a project document neither was asked to touch, made two git commits authored as the user, pushed both to the shared main branch, and created five tickets in a live project-management board. Their briefs asked for a critique file and a one-line confirmation. Nothing else.
+
+**The trap is that the work was good.** The tickets were well written and some were genuinely owed. That is exactly why prompt wording cannot be the control: a capable agent with a full toolbelt and rich context finds adjacent work and does it, and the better the agent, the more plausible the overreach looks. The reviewer then has to audit a diff they never asked for, in a repo they thought was quiet.
+
+Three rules that bind:
+
+1. **Never spawn a critic or synthesizer as `general-purpose`.** Define dedicated agents scoped to `Read, Grep, Glob, Write`: no shell, so they cannot run `git`, and no MCP tools, so they cannot write to any external service. If those definitions are missing, create them before running a round; do not substitute `general-purpose` "just this once".
+2. **Never run Codex with `workspace-write`.** Under `--sandbox read-only` it cannot write its own critique, so the harness captures stdout and writes the file. That is the intended trade.
+3. **Check the work folder's repo state after a round.** `git status` and `git log --oneline -5` before you commit anything of your own. A round that ends with unexpected commits is a skill bug, not an anomaly.
+
+Residual hole, stated so nobody assumes it is closed: a critic still holds `Write`, which can create or overwrite a file at any path, because writing the critique is the job. This reduces blast radius; it does not prove containment. If your runtime supports path-scoped writes, scope them to the work folder.
 
 ### Step 4: Verify every critic returned a real critique (liveness gate)
 
@@ -167,7 +183,7 @@ The critique stage is not the weak point of this gauntlet; synthesis is. The cla
 
 1. **Convergence BINDS the decision, not just the next iteration.** If critics converge against the proposed approach (5-of-5, 4-of-5, 4-of-4, 3-of-4, 3-of-3, or 2-of-3, counting calibrated critics only), you may NOT adopt the rejected approach in `decision.md`. The convergent alternative is the default outcome.
 2. **Overriding convergence requires explicit escalation, never prose.** If you believe the converged critics are wrong, you may not bury the reversal in the synthesis or decision. Stop and put it to the user in plain words: "All N critics say X. I am proposing NOT-X. Here is exactly what I am asking you to overrule them on, and why." The user overrides consciously, or the convergent answer stands. A hypothetical objection ("it might not scale") is not grounds; only a demonstrated one is.
-3. **The synthesizer is not the proposer (always, no exceptions).** The main session is anchored by the whole discussion, so it never writes the synthesis. Spawn a FRESH general-purpose agent (Agent tool, `subagent_type: "general-purpose"`, `model: "haiku"`, a deliberately small model so the judge cannot out-clever the critics) and hand it the fixed synthesis-agent prompt (see "Synthesis agent invocation" below) verbatim. Do not author findings for it or summarize the critiques for it; it reads the raw critiques and the proposal from files itself. Then surface its `synthesis-v<N>.md` to the user VERBATIM, the same rule as the raw critiques, so the proposer cannot spin the verdict on relay. The thing with ego in the proposal neither writes the synthesis nor narrates it.
+3. **The synthesizer is not the proposer (always, no exceptions).** The main session is anchored by the whole discussion, so it never writes the synthesis. Spawn a FRESH least-privilege agent (Agent tool, `subagent_type: "gauntlet-synthesizer"`, `model: "haiku"`, a deliberately small model so the judge cannot out-clever the critics) and hand it the fixed synthesis-agent prompt (see "Synthesis agent invocation" below) verbatim. Do not author findings for it or summarize the critiques for it; it reads the raw critiques and the proposal from files itself. Then surface its `synthesis-v<N>.md` to the user VERBATIM, the same rule as the raw critiques, so the proposer cannot spin the verdict on relay. The thing with ego in the proposal neither writes the synthesis nor narrates it.
 4. **Boring-baseline must be answered in the synthesis.** Restate the most standard, right-fit way to do this for the job (reuse, a recomposition of existing parts, or one small standard new service, whichever actually fits; reusing a wrong-fit existing tool is NOT the boring baseline). State why the chosen design is not just that. If "why not the boring way" has no demonstrated answer, the boring way wins.
 5. **Proof-of-life before "decided."** No `decision.md` is accepted until one real end-to-end slice runs on real infrastructure. A decision on paper is a hypothesis.
 
@@ -222,7 +238,7 @@ A four-round run on a real decision (renderer delivery mechanism) is reproduced 
 
 ## Critic invocation reference
 
-### Claude general-purpose subagent prompt template
+### Claude critic subagent prompt template (`subagent_type: "gauntlet-critic"`)
 
 ```
 You are an adversarial architecture critic for <ADR-title> round <N>.
@@ -233,9 +249,9 @@ STEP 2: Read required files in the order specified.
 
 STEP 3: Write your critique to /path/to/critique-v<N>-claude.md with this header:
 
-# Critique v<N>: Claude (general-purpose subagent) <date>
+# Critique v<N>: Claude (gauntlet-critic subagent) <date>
 
-Model: Claude via general-purpose subagent type, adversarial brief.
+Model: Claude via gauntlet-critic subagent type, adversarial brief.
 Brief location: brief-v<N>.md in this folder.
 
 ---
@@ -253,7 +269,7 @@ POSTURE:
 
 ### Synthesis agent invocation
 
-The synthesis is written by a FRESH general-purpose agent, never the main (proposer) session (Step 5.5 rule 3). Spawn it with the Agent tool, `subagent_type: "general-purpose"`, `model: "haiku"` (a deliberately small model: the synthesis job is near-mechanical, and a less-clever judge cannot rationalize past the critics), and pass this prompt verbatim. Do not summarize the critiques for it; it reads them itself. Surface its output to the user verbatim.
+The synthesis is written by a FRESH least-privilege synthesizer agent, never the main (proposer) session (Step 5.5 rule 3). Spawn it with the Agent tool, `subagent_type: "gauntlet-synthesizer"`, `model: "haiku"` (a deliberately small model: the synthesis job is near-mechanical, and a less-clever judge cannot rationalize past the critics), and pass this prompt verbatim. Do not summarize the critiques for it; it reads them itself. Surface its output to the user verbatim.
 
 The prompt below is written for architecture mode. For science and editorial, keep the convergence logic and neutral-judge posture unchanged, but swap the recommendation vocabulary (science: minor / major revisions / reject-rescope; editorial: publish / blocker-edits / hold) and drop the boring-baseline and blank-sheet bullets, which are architecture-only.
 
@@ -277,7 +293,7 @@ POSTURE: neutral judge, not advocate. No sympathetic opener. Lead with what the 
 ### Codex CLI invocation
 
 ```bash
-codex exec --sandbox workspace-write --skip-git-repo-check --cd <work-folder> "<same prompt template>" </dev/null 2>&1 | tail -30
+codex exec --sandbox read-only --skip-git-repo-check --cd <work-folder> "<same prompt template, but: print the critique to STDOUT, write no files>" </dev/null > <work-folder>/critique-v<N>-codex.raw 2>&1
 ```
 
 Important: `</dev/null` is required. Without it, `codex exec` waits on stdin and hangs indefinitely.
@@ -313,7 +329,7 @@ Same shape as Grok. Requires `DEEPSEEK_API_KEY`. The model is pinned at the top 
 ## Cost
 
 Per round with the full five-critic roster:
-- Claude general-purpose subagent: included in subscription
+- Claude gauntlet-critic subagent: included in subscription
 - Codex CLI: included in subscription
 - Grok via xAI API: roughly $0.05
 - Gemini via Google AI Studio API: roughly $0.05 (free tier often covers it)
