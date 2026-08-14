@@ -126,7 +126,7 @@ GROK_MODEL=grok-5 ./grok-critic.sh /path/to/decisions 1
 GEMINI_MODEL=gemini-3.5-pro ./gemini-critic.sh /path/to/decisions 1
 ```
 
-Pins verified current as of 2026-07-10: `grok-4.5`, `gemini-3.1-pro-preview` (Gemini 3.5 shipped as Flash only; 3.1 Pro remains the reasoning tier), `accounts/fireworks/models/deepseek-v4-pro` (Fireworks' id for V4-Pro; on the first-party API use `deepseek-v4-pro`, and note the legacy deepseek-chat / deepseek-reasoner slugs retire 2026-07-24). The Claude and Codex critics carry no pin: they run on whatever your Claude Code session and `codex` CLI default to, so they update themselves.
+Pins verified current as of 2026-08-14: `grok-4.6` (4.6 shipped 2026-08-12; confirmed in /v1/models), `gemini-3.1-pro-preview` (Gemini 3.5 shipped as Flash only; 3.1 Pro remains the reasoning tier), `accounts/fireworks/models/deepseek-v4-pro` (Fireworks' id for V4-Pro; on the first-party API use `deepseek-v4-pro`, and note the legacy deepseek-chat / deepseek-reasoner slugs retire 2026-07-24). The Claude and Codex critics carry no pin: they run on whatever your Claude Code session and `codex` CLI default to, so they update themselves.
 
 ## When to use it, and when not to
 
