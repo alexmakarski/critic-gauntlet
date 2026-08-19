@@ -1,5 +1,12 @@
 # Critic Gauntlet
 
+> **SUPERSEDED.** This skill is now maintained as part of
+> [GADFLY](https://github.com/alexmakarski/gadfly), an adversarial review
+> stack bundling `prior-art`, `critic-gauntlet`, and `waterfall-lint`, with
+> unified critic scripts that work from both Claude Code and Codex. This repo
+> stays up for existing installs but receives no further updates. Install
+> GADFLY instead: `/plugin marketplace add alexmakarski/gadfly`.
+
 A Claude Code skill that pits five AI models against your work as adversarial critics, surfaces their raw objections to you unfiltered, and synthesizes where they agree. For decisions and documents you cannot cheaply reverse.
 
 One harness, three rubric modes: **architecture** (ADR-grade design decisions, the default), **science** (working-paper desk-screen before submission), and **editorial** (five-lens review of published-grade articles). The critics, the parallel spawn, the liveness gate, and the synthesis rules are identical in every mode; only the rubric the critics answer changes.
